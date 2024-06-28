@@ -1,20 +1,26 @@
+//! The api I'm thinking about here is a cross between  Google's Monarch and Dropbox's vortex2
+//! let push_counter_def = metrics64::DefineCounter(
+//!     "metrics64/exporter/pushes",    // Metric name
+//!     metrics64::targets::Pod,       // target metric (the location this metric is exported from)
+//!     &["status"],                // tags associated with this metric
+//! );
+//! let push_counter = push_counter_def.new("status", "ok");
+//! There are a few core tenants I want to focus on for metrics64
+//! 1. metrics64 does almost all the work, string internment, registries, exports, etc are all metrics64 job
+//! 2. dispatch from some app condition to a specific metric op is the applications responsibility
+//! 3. no crazy macro magic. Try and leverage the type system and runtime amortization to deal with the complexity
+
 use gxhash::HashMap;
 use parking_lot::RwLock;
 use std::any::Any;
 use std::collections::hash_map::Entry;
+use std::collections::BTreeSet;
+use std::sync::atomic::AtomicI64;
 use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     sync::{atomic::AtomicU64, Arc, LazyLock},
 };
-
-/// The api I'm thinking about here is a cross between  Google's Monarch and Dropbox's vortex2
-/// let push_counter_def = metrics64::DefineCounter(
-///     "metrics64/exporter/pushes",    // Metric name
-///     metrics64::targets::Pod,       // target metric (the location this metric is exported from)
-///     &["status"],                // tags associated with this metric
-/// );
-/// let push_counter = push_counter_def.new("status", "ok");
 
 /// An enum that defines a set of global location tags that are evalulated once per process
 /// to provide location/targetting information.
@@ -71,6 +77,44 @@ where
 }
 
 #[derive(Clone)]
+pub struct Gauge {
+    inner: Arc<AtomicI64>,
+}
+
+impl Gauge {
+    pub fn incr_by(&self, count: i64) {
+        self.inner
+            .fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn incr(&self) {
+        self.incr_by(1);
+    }
+
+    pub fn set(&self, val: i64) {
+        self.inner.store(val, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn decr(&self) {
+        self.incr_by(-1)
+    }
+}
+
+impl Metric for Gauge {
+    fn must(_mid: u64) -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl Recordable for Gauge {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Clone)]
 pub struct Counter {
     inner: Arc<AtomicU64>,
 }
@@ -103,7 +147,7 @@ impl Recordable for Counter {
 struct MetricMetadata {
     name: &'static str,
     target: Target,
-    tags: Vec<(&'static str, &'static str)>,
+    tags: BTreeSet<(&'static str, &'static str)>,
     metric: Box<dyn Recordable>,
 }
 
@@ -111,13 +155,13 @@ impl MetricMetadata {
     pub fn new<R: Recordable>(
         name: &'static str,
         target: Target,
-        tags: &[(&'static str, &'static str)],
+        tags: BTreeSet<(&'static str, &'static str)>,
         metric: R,
     ) -> Self {
         Self {
             name,
             target,
-            tags: Vec::from(tags),
+            tags,
             metric: Box::new(metric),
         }
     }
@@ -139,20 +183,28 @@ impl Registry {
 
     /// Calculate a metric-id for this metric. This is used as a key internally to the registry to handle lookups of
     /// registered metrics.
-    fn mid(&self, name: &'static str, tags: &[(&'static str, &'static str)]) -> u64 {
+    fn mid(&self, name: &'static str, tags: &BTreeSet<(&'static str, &'static str)>) -> u64 {
         let mut hasher = gxhash::GxHasher::with_seed(MID_SEED);
         name.hash(&mut hasher);
         tags.hash(&mut hasher);
         hasher.finish()
     }
 
+    /// Register is a fairly heavy weight operation. We expect that concrete metrics are cached at a higher
+    /// level and statically dispatched in an app-specific way. This usage expectation is what allows us to
+    /// provide a more ergonomic API. We pay the majority of the cost at register() time and then everything
+    /// after is coordination free.
     pub fn register<R: Recordable + Metric + Clone>(
         &self,
         name: &'static str,
         target: Target,
         tags: &[(&'static str, &'static str)],
     ) -> R {
-        let mid = self.mid(name, tags);
+        // We dump the tags into a btree set in order to sort and dedupe.
+        // TODO(rossdylan): Analyze the performance impact of this alloc in the reg path
+        // TODO(rossdylan): Weaking lifetime reqs on the tags and intern them instead
+        let tags: BTreeSet<(&'static str, &'static str)> = tags.iter().cloned().collect();
+        let mid = self.mid(name, &tags);
         let mut metrics = self.metrics.write();
         let entry = metrics.entry(mid);
         match entry {
@@ -190,15 +242,28 @@ mod tests {
             ("method", "Push"),
             ("status", "ok"),
         ]);
+        counter.incr()
+    }
 
-        let counter2_same = ALLEYCAT_CLIENT.must(&[
+    #[test]
+    fn test_counter_dispatch() {
+        let counter = ALLEYCAT_CLIENT.must(&[
             ("service", "metrics64.MetricCollector"),
             ("method", "Push"),
             ("status", "ok"),
         ]);
+
+        let counter2 = ALLEYCAT_CLIENT.must(&[
+            ("service", "metrics64.MetricCollector"),
+            ("status", "ok"),
+            ("method", "Push"),
+        ]);
+
+        let counter3 = counter2.clone();
         counter.incr();
-        counter2_same.incr();
-        assert_eq!(counter.inner.load(std::sync::atomic::Ordering::Relaxed), 2);
+        counter2.incr();
+        counter3.incr();
+        assert_eq!(counter.inner.load(std::sync::atomic::Ordering::Relaxed), 3);
         println!("{:#?}", DEFAULT_REGISTRY.metrics.read().keys());
         assert_eq!(DEFAULT_REGISTRY.metrics.read().len(), 1);
     }
