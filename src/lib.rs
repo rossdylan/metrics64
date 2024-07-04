@@ -12,6 +12,7 @@
 
 use gxhash::HashMap;
 use parking_lot::RwLock;
+use smallvec::SmallVec;
 use std::any::Any;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeSet;
@@ -147,7 +148,7 @@ impl Recordable for Counter {
 struct MetricMetadata {
     name: &'static str,
     target: Target,
-    tags: BTreeSet<(&'static str, &'static str)>,
+    tags: SmallVec<[(&'static str, &'static str); 8]>,
     metric: Box<dyn Recordable>,
 }
 
@@ -155,7 +156,7 @@ impl MetricMetadata {
     pub fn new<R: Recordable>(
         name: &'static str,
         target: Target,
-        tags: BTreeSet<(&'static str, &'static str)>,
+        tags: SmallVec<[(&'static str, &'static str); 8]>,
         metric: R,
     ) -> Self {
         Self {
@@ -183,7 +184,8 @@ impl Registry {
 
     /// Calculate a metric-id for this metric. This is used as a key internally to the registry to handle lookups of
     /// registered metrics.
-    fn mid(&self, name: &'static str, tags: &BTreeSet<(&'static str, &'static str)>) -> u64 {
+    /// NOTE(rossdylan): tags **must** be sorted to get an accurate mid
+    fn mid(&self, name: &'static str, tags: &[(&'static str, &'static str)]) -> u64 {
         let mut hasher = gxhash::GxHasher::with_seed(MID_SEED);
         name.hash(&mut hasher);
         tags.hash(&mut hasher);
@@ -200,10 +202,18 @@ impl Registry {
         target: Target,
         tags: &[(&'static str, &'static str)],
     ) -> R {
-        // We dump the tags into a btree set in order to sort and dedupe.
-        // TODO(rossdylan): Analyze the performance impact of this alloc in the reg path
         // TODO(rossdylan): Weaking lifetime reqs on the tags and intern them instead
-        let tags: BTreeSet<(&'static str, &'static str)> = tags.iter().cloned().collect();
+        // NOTE(rossdylan): We are potentially being overly clever here. Instead
+        // of copying the whole thing into a BTreeSet like we had originally we
+        // instead use a SmallVec that can hold 8 tags inline on the stack. The
+        // idea is that we have cascading levels of "fast" paths
+        // 1. <= 8 tags, existing => no allocs, 1 lock, 1 hashmap lookup
+        // 2. <= 8 tags, new => 2 allocs, 1 lock, 1 hashmap insert
+        // 3. > 8 tags, existing => 1 alloc, 1 lock, 1 hashmap lookup
+        // 3. > 8 tags, new => 3 alloc, 1 lock, 1 hashmap insert
+        let mut tags: SmallVec<[(&'static str, &'static str); 8]> = SmallVec::from_slice(tags);
+        tags.sort_unstable();
+        tags.dedup();
         let mid = self.mid(name, &tags);
         let mut metrics = self.metrics.write();
         let entry = metrics.entry(mid);
@@ -250,12 +260,12 @@ mod tests {
         let counter = ALLEYCAT_CLIENT.must(&[
             ("service", "metrics64.MetricCollector"),
             ("method", "Push"),
-            ("status", "ok"),
+            ("status", "test"),
         ]);
 
         let counter2 = ALLEYCAT_CLIENT.must(&[
             ("service", "metrics64.MetricCollector"),
-            ("status", "ok"),
+            ("status", "test"),
             ("method", "Push"),
         ]);
 
@@ -265,6 +275,8 @@ mod tests {
         counter3.incr();
         assert_eq!(counter.inner.load(std::sync::atomic::Ordering::Relaxed), 3);
         println!("{:#?}", DEFAULT_REGISTRY.metrics.read().keys());
-        assert_eq!(DEFAULT_REGISTRY.metrics.read().len(), 1);
+        // NOTE(rossdylan): This reg is global so this includes the other test metrics
+        // as well.
+        assert_eq!(DEFAULT_REGISTRY.metrics.read().len(), 2);
     }
 }
