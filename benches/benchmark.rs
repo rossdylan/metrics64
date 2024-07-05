@@ -6,6 +6,20 @@ use metrics64::CounterDef;
 pub fn benchmark_must(c: &mut Criterion) {
     const DEF: CounterDef =
         CounterDef::new("metrics64/benchmarks/one-tag", metrics64::Target::Pod, &["tag"]);
+    const NINE_TAGS_DEF: CounterDef = CounterDef::new(
+        "metrics64/benchmarks/nine-tag",
+        metrics64::Target::Pod,
+        &[
+            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        ],
+    );
+    const EIGHT_TAGS_DEF: CounterDef = CounterDef::new(
+        "metrics64/benchmarks/eight-tag",
+        metrics64::Target::Pod,
+        &[
+            "one", "two", "three", "four", "five", "six", "seven", "eight",
+        ],
+    );
     c.bench_function("must-1-tag-new", |b| {
         let mut values = (0i64..).map(|i| Box::leak(i.to_string().into_boxed_str()));
         b.iter(|| DEF.must(&[("tag", values.next().unwrap())]))
@@ -13,6 +27,35 @@ pub fn benchmark_must(c: &mut Criterion) {
     c.bench_function("must-1-tag-existing", |b| {
         let _counter = black_box(DEF.must(&[("tag", "one")]));
         b.iter(|| DEF.must(&[("tag", "one")]));
+    });
+    c.bench_function("must-8-tags", |b| {
+        b.iter(|| {
+            EIGHT_TAGS_DEF.must(&[
+                ("one", "1"),
+                ("two", "2"),
+                ("three", "3"),
+                ("four", "4"),
+                ("five", "5"),
+                ("six", "6"),
+                ("seven", "7"),
+                ("eight", "8"),
+            ])
+        });
+    });
+    c.bench_function("must-9-tags", |b| {
+        b.iter(|| {
+            NINE_TAGS_DEF.must(&[
+                ("one", "1"),
+                ("two", "2"),
+                ("three", "3"),
+                ("four", "4"),
+                ("five", "5"),
+                ("six", "6"),
+                ("seven", "7"),
+                ("eight", "8"),
+                ("nine", "9"),
+            ])
+        });
     });
 }
 
