@@ -10,12 +10,11 @@
 //! 2. dispatch from some app condition to a specific metric op is the applications responsibility
 //! 3. no crazy macro magic. Try and leverage the type system and runtime amortization to deal with the complexity
 
-use gxhash::HashMap;
-use parking_lot::RwLock;
+use gxhash::{HashMap, HashSet};
+use parking_lot::{Mutex, RwLock};
 use smallvec::SmallVec;
 use std::any::Any;
 use std::collections::hash_map::Entry;
-use std::collections::BTreeSet;
 use std::sync::atomic::AtomicI64;
 use std::{
     hash::{Hash, Hasher},
@@ -169,8 +168,36 @@ impl MetricMetadata {
 }
 
 #[derive(Default)]
+struct Interner {
+    inner: Mutex<HashSet<&'static str>>,
+}
+
+impl Interner {
+    /// Our string interning routine is pretty shit, we just leak heap allocations and
+    /// track them in a [`HashSet`]. Ideally we'd area allocate the actual strings
+    /// instead of littering them across the heap.
+    fn intern_tags(&self, tags: &[(&str, &str)]) -> SmallVec<[(&'static str, &'static str); 8]> {
+        let mut inner = self.inner.lock();
+        let intern = |i: &mut HashSet<&'static str>, s| -> &'static str {
+            if let Some(is) = i.get(s) {
+                is
+            } else {
+                let s = String::from(s);
+                let leaked: &'static str = Box::leak(s.into_boxed_str());
+                i.insert(leaked);
+                leaked
+            }
+        };
+        tags.iter()
+            .map(|(k, v)| (intern(&mut inner, *k), intern(&mut inner, *v)))
+            .collect()
+    }
+}
+
+#[derive(Default)]
 pub struct Registry {
     metrics: RwLock<HashMap<u64, MetricMetadata>>,
+    interner: Interner,
 }
 
 static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
@@ -179,13 +206,14 @@ impl Registry {
     pub fn new() -> Self {
         Self {
             metrics: Default::default(),
+            interner: Default::default(),
         }
     }
 
     /// Calculate a metric-id for this metric. This is used as a key internally to the registry to handle lookups of
     /// registered metrics.
     /// NOTE(rossdylan): tags **must** be sorted to get an accurate mid
-    fn mid(&self, name: &'static str, tags: &[(&'static str, &'static str)]) -> u64 {
+    fn mid(&self, name: &str, tags: &[(&str, &str)]) -> u64 {
         let mut hasher = gxhash::GxHasher::with_seed(MID_SEED);
         name.hash(&mut hasher);
         tags.hash(&mut hasher);
@@ -200,7 +228,7 @@ impl Registry {
         &self,
         name: &'static str,
         target: Target,
-        tags: &[(&'static str, &'static str)],
+        tags: &[(&str, &str)],
     ) -> R {
         // TODO(rossdylan): Weaking lifetime reqs on the tags and intern them instead
         // NOTE(rossdylan): We are potentially being overly clever here. Instead
@@ -211,7 +239,7 @@ impl Registry {
         // 2. <= 8 tags, new => 2 allocs, 1 lock, 1 hashmap insert
         // 3. > 8 tags, existing => 1 alloc, 1 lock, 1 hashmap lookup
         // 3. > 8 tags, new => 3 alloc, 1 lock, 1 hashmap insert
-        let mut tags: SmallVec<[(&'static str, &'static str); 8]> = SmallVec::from_slice(tags);
+        let mut tags = self.interner.intern_tags(tags);
         tags.sort_unstable();
         tags.dedup();
         let mid = self.mid(name, &tags);
