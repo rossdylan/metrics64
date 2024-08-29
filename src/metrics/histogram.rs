@@ -3,6 +3,12 @@ use std::{
     sync::{atomic, Arc, Mutex},
 };
 
+/// Our histogram will be the log-exponential based histogram defined by otel.
+/// Seems tdigest has fallen to the wayside, and the general consensus?? is
+/// log-exponential histograms are the thing. I think ddsketch, otel,
+/// and prometheus all implement some version of it. I think the implementation
+/// should be fairly straight forward, but we'll see. The go for it seems
+/// reasonable, at least compared to the weirdness of tdigest
 #[derive(Default)]
 struct HistogramInner {}
 
