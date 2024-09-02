@@ -38,20 +38,55 @@ pub trait Recordable: Send + Sync + 'static {
     fn value(&self) -> MetricValue;
 }
 
+pub trait Tags<'a> {
+    fn tags(&self) -> &'a [(&'a str, &'a str)];
+}
+
+impl<'a> Tags<'a> for &'a [(&'a str, &'a str)] {
+    fn tags(&self) -> &'a [(&'a str, &'a str)] {
+        self
+    }
+}
+
+pub trait TagSchema {
+    type Input<'a>: Tags<'a>;
+
+    fn tag_keys(&self) -> &'static [&'static str];
+
+    fn validate(&self, tags: &Self::Input<'_>);
+}
+
+impl TagSchema for &'static [&'static str] {
+    type Input<'a> = &'a [(&'a str, &'a str)];
+    fn tag_keys(&self) -> &'static [&'static str] {
+        self
+    }
+
+    fn validate(&self, tags: &Self::Input<'_>) {
+        for (key, _value) in tags.tags() {
+            if !self.contains(key) {
+                // TODO(rossdylan): Don't panic, and instead return an error
+                panic!("passed invalid tag {key}")
+            }
+        }
+    }
+}
+
 /// A constant definition of a metric. Provides a single spot for defining the schema of a metric at compile time
 /// Internally it will handle calling out to the registry at runtime to register the new metric.
-pub struct MetricDef<M> {
+pub struct MetricDef<M, T = &'static [&'static str]> {
     name: &'static str,
-    tags: &'static [&'static str],
+    tags: T,
     target: Target,
     _kind: PhantomData<M>,
 }
 
-impl<M> MetricDef<M>
+impl<M, T> MetricDef<M, T>
 where
     M: Metric + Recordable + Clone,
+    T: TagSchema,
 {
-    pub const fn new(name: &'static str, target: Target, tags: &'static [&'static str]) -> Self {
+    pub const fn new(name: &'static str, target: Target, tags: T) -> Self {
         Self {
             name,
             tags,
@@ -67,14 +102,13 @@ where
     /// the core metric. This should allow us to avoid having to spread the allocations for metric metadata
     /// into each of the individual metrics and instead we can keep them all together in the hashmap. or
     /// maybe we use a slab/pool since its all pretty small.
-    pub fn must(&self, tags: &[(&str, &str)]) -> M {
+    pub fn must(&self, tags: T::Input<'_>) -> M {
         self.must_with_registry(&DEFAULT_REGISTRY, tags)
     }
 
     #[doc(hidden)]
-    pub fn must_with_registry(&self, registry: &Registry, tags: &[(&str, &str)]) -> M {
-        // TODO(rossdylan): validate incoming tags based on schema in definition
-
-        registry.register(self.name, self.target, tags)
+    pub fn must_with_registry(&self, registry: &Registry, tags: T::Input<'_>) -> M {
+        self.tags.validate(&tags);
+        registry.register(self.name, self.target, tags.tags())
     }
 }

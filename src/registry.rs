@@ -21,7 +21,7 @@ use tonic::transport::{Channel, Endpoint};
 
 use crate::metrics::{Metric, MetricValue, Recordable, Target};
 const DEFAULT_COLLECTOR_ADDR: &str = "http://localhost:4317";
-pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(|| Registry::new());
+pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 const MID_SEED: i64 = 0xdeadbeef;
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 

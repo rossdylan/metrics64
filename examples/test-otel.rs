@@ -14,5 +14,4 @@ pub async fn main() -> anyhow::Result<()> {
         counter.incr();
         ticker.tick().await;
     }
-    Ok(())
 }
