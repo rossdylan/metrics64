@@ -20,6 +20,13 @@ pub trait Metric: Sized {
     fn must(mid: u64) -> Self;
 }
 
+#[derive(Copy, Clone)]
+pub enum MetricValue {
+    Counter(u64),
+    Gauge(i64),
+    Histogram,
+}
+
 /// A trait representing the internal chunk of the metric interface. We use this to collect observations of the
 /// underlying metric value, as well as store references to the metric in the registry.
 pub trait Recordable: Send + Sync + 'static {
@@ -27,6 +34,8 @@ pub trait Recordable: Send + Sync + 'static {
     /// de-virtualize (is this right term?) our `dyn Recordable` back into the actual
     /// concrete [`Metric`] the user expects.
     fn as_any(&self) -> &dyn Any;
+
+    fn value(&self) -> MetricValue;
 }
 
 /// A constant definition of a metric. Provides a single spot for defining the schema of a metric at compile time

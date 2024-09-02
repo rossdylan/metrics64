@@ -3,6 +3,8 @@ use std::{
     sync::{atomic, Arc},
 };
 
+use super::MetricValue;
+
 #[derive(Clone)]
 pub struct Gauge {
     inner: Arc<atomic::AtomicI64>,
@@ -37,5 +39,9 @@ impl super::Metric for Gauge {
 impl super::Recordable for Gauge {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn value(&self) -> MetricValue {
+        MetricValue::Gauge(self.inner.load(atomic::Ordering::Relaxed))
     }
 }

@@ -7,13 +7,27 @@ edition = "2021"
 
 [dependencies]
 gxhash = "3.4.1"
+opentelemetry-proto = { version = "0.7.0", default-features = false, features = [
+    "gen-tonic",
+    "metrics",
+] }
+opentelemetry-semantic-conventions = "0.16.0"
 parking_lot = "0.12.3"
 smallvec = "1.13.2"
+tokio = { version = "1.40.0", features = ["time"] }
+tonic = "0.12.2"
+tracing = "0.1.40"
 
 [dev-dependencies]
+anyhow = "1.0.86"
 criterion = "0.5"
 pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
+tokio = { version = "1.40.0", features = ["full"] }
+tracing-subscriber = "0.3.18"
 
 [[bench]]
 name = "benchmark"
 harness = false
+
+[[example]]
+name = "test-otel"

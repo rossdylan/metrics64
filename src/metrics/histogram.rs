@@ -1,7 +1,6 @@
-use std::{
-    any::Any,
-    sync::{atomic, Arc, Mutex},
-};
+use std::{any::Any, sync::Mutex};
+
+use super::MetricValue;
 
 /// Our histogram will be the log-exponential based histogram defined by otel.
 /// Seems tdigest has fallen to the wayside, and the general consensus?? is
@@ -20,7 +19,7 @@ pub struct Histogram {
 }
 
 impl Histogram {
-    pub fn observe(&self, value: f32) {
+    pub fn observe(&self, _value: f32) {
         todo!()
     }
 }
@@ -36,5 +35,9 @@ impl super::Metric for Histogram {
 impl super::Recordable for Histogram {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn value(&self) -> MetricValue {
+        MetricValue::Histogram
     }
 }

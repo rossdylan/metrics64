@@ -3,6 +3,8 @@ use std::{
     sync::{atomic, Arc},
 };
 
+use super::MetricValue;
+
 /// A simple delta counter used to record the rate of actions happening. The
 /// value of the counter is reset when read, thus we always report the delta
 /// between times.
@@ -32,5 +34,9 @@ impl super::Metric for Counter {
 impl super::Recordable for Counter {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn value(&self) -> MetricValue {
+        MetricValue::Counter(self.inner.swap(0, atomic::Ordering::Relaxed))
     }
 }
