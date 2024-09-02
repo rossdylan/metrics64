@@ -117,6 +117,7 @@ pub struct Collector {
     registry: &'static Registry,
     client: MetricsServiceClient<Channel>,
     start_time_ts: Mutex<Option<StartTs>>,
+    metrics_gauge: crate::Gauge,
 }
 
 impl Collector {
@@ -130,6 +131,7 @@ impl Collector {
         let otel_metrics = {
             let metrics = self.registry.metrics.read();
             let mut otel_metrics = Vec::with_capacity(metrics.len());
+            self.metrics_gauge.set(metrics.len() as i64);
             for metric in metrics.values() {
                 let value = metric.metric.value();
                 let attributes: Vec<KeyValue> = metric
@@ -223,6 +225,7 @@ impl Registry {
             registry: self,
             client: MetricsServiceClient::new(channel),
             start_time_ts: Default::default(),
+            metrics_gauge: metrics::REGISTERED_METRICS.must(&[]),
         };
         tokio::spawn(async move {
             let mut collector = collector;
@@ -287,6 +290,13 @@ impl Registry {
             }
         }
     }
+}
+
+pub(crate) mod metrics {
+    use crate::GaugeDef;
+
+    pub const REGISTERED_METRICS: GaugeDef =
+        GaugeDef::new("metrics64/registry/metrics", crate::Target::Pod, &[]);
 }
 
 #[cfg(test)]
