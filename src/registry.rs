@@ -118,6 +118,7 @@ pub struct Collector {
     client: MetricsServiceClient<Channel>,
     start_time_ts: Mutex<Option<StartTs>>,
     metrics_gauge: crate::Gauge,
+    export_latency_ms: crate::Histogram,
 }
 
 impl Collector {
@@ -167,7 +168,9 @@ impl Collector {
                             value: Some(number_data_point::Value::AsInt(v)),
                         }],
                     }),
-                    MetricValue::Histogram => todo!(),
+                    MetricValue::Histogram => {
+                        continue;
+                    }
                 };
                 otel_metrics.push(OTelMetric {
                     name: metric.name.into(),
@@ -202,6 +205,7 @@ impl Collector {
         if let Err(e) = export_res {
             tracing::error!(message="failed to export metrics", status=?e);
         }
+        self.export_latency_ms.record_duration_ms(collection_dur);
     }
 }
 
@@ -226,6 +230,7 @@ impl Registry {
             client: MetricsServiceClient::new(channel),
             start_time_ts: Default::default(),
             metrics_gauge: metrics::REGISTERED_METRICS.must(&[]),
+            export_latency_ms: metrics::EXPORT_LATENCY_MS.must(&[]),
         };
         tokio::spawn(async move {
             let mut collector = collector;
@@ -293,10 +298,15 @@ impl Registry {
 }
 
 pub(crate) mod metrics {
-    use crate::GaugeDef;
+    use crate::{GaugeDef, HistogramDef};
 
     pub const REGISTERED_METRICS: GaugeDef =
         GaugeDef::new("metrics64/registry/metrics", crate::Target::Pod, &[]);
+    pub const EXPORT_LATENCY_MS: HistogramDef = HistogramDef::new(
+        "metrics64/registry/export_latency_ms",
+        crate::Target::Pod,
+        &[],
+    );
 }
 
 #[cfg(test)]

@@ -1,4 +1,3 @@
-#![feature(is_sorted)]
 //! The api I'm thinking about here is a cross between  Google's Monarch and Dropbox's vortex2
 //! let push_counter_def = metrics64::DefineCounter(
 //!     "metrics64/exporter/pushes",    // Metric name
@@ -11,13 +10,15 @@
 //! 2. dispatch from some app condition to a specific metric op is the applications responsibility
 //! 3. no crazy macro magic. Try and leverage the type system and runtime amortization to deal with the complexity
 
+mod cmath;
 mod metrics;
 mod registry;
 
-use metrics::{counter::Counter, gauge::Gauge, MetricDef};
+use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram, MetricDef};
 
 pub use metrics::Target;
 pub use registry::DEFAULT_REGISTRY;
 
 pub type CounterDef = MetricDef<Counter>;
 pub type GaugeDef = MetricDef<Gauge>;
+pub type HistogramDef = MetricDef<Histogram>;
