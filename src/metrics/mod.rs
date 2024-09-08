@@ -20,11 +20,20 @@ pub trait Metric: Sized {
     fn must(mid: u64) -> Self;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum MetricValue {
     Counter(u64),
     Gauge(i64),
-    Histogram,
+    Histogram {
+        scale: i32,
+        count: u64,
+        zero_count: u64,
+        sum: f64,
+        min: f64,
+        max: f64,
+        positive: (i32, Vec<u64>),
+        negative: (i32, Vec<u64>),
+    },
 }
 
 /// A trait representing the internal chunk of the metric interface. We use this to collect observations of the

@@ -55,12 +55,13 @@ struct HistogramInner {
     max: f64,
     sum: f64,
     max_size: i64,
-    zero_count: i64,
+    zero_count: u64,
     /// scale describes the resolution of the histogram. Boundaries are
     /// located at powers of the base, where:
     ///
     ///   base = 2 ^ (2 ^ -Scale)
     scale: i32,
+    max_scale: i32,
     positive_buckets: HistogramBuckets,
     negative_buckets: HistogramBuckets,
 }
@@ -70,6 +71,7 @@ impl Default for HistogramInner {
         Self::new(160, 20)
     }
 }
+
 impl HistogramInner {
     fn new(max_size: i64, max_scale: i32) -> Self {
         Self {
@@ -80,9 +82,41 @@ impl HistogramInner {
             max_size,
             zero_count: 0,
             scale: max_scale,
+            max_scale,
             positive_buckets: HistogramBuckets::default(),
             negative_buckets: HistogramBuckets::default(),
         }
+    }
+
+    fn get_and_reset(&mut self) -> MetricValue {
+        let value = MetricValue::Histogram {
+            scale: self.scale,
+            count: self.count,
+            zero_count: self.zero_count,
+            sum: self.sum,
+            min: self.min,
+            max: self.max,
+            positive: (
+                self.positive_buckets.start_bin,
+                self.positive_buckets.counts.clone(),
+            ),
+            negative: (
+                self.negative_buckets.start_bin,
+                self.negative_buckets.counts.clone(),
+            ),
+        };
+        // now reset the histogram back to its defaults
+        self.scale = self.max_scale;
+        self.count = 0;
+        self.zero_count = 0;
+        self.sum = 0f64;
+        self.min = f64::MAX;
+        self.max = f64::MIN;
+        self.positive_buckets.start_bin = 0;
+        self.positive_buckets.counts.truncate(0);
+        self.negative_buckets.start_bin = 0;
+        self.negative_buckets.counts.truncate(0);
+        value
     }
 
     /// Map the given floating point value to a bin in our histogram.
@@ -100,16 +134,16 @@ impl HistogramInner {
             };
             (exp - correction) >> (-self.scale)
         } else {
-            exp << self.scale + ((frac.ln() * SCALE_FACTORS[self.scale as usize]) as i32) - 1
+            (exp << self.scale) + ((frac.ln() * SCALE_FACTORS[self.scale as usize]) as i32) - 1
         }
     }
 
     /// Return the magnitude of the scale change needed to fit bin in
     /// the bucket. If no scale change is needed 0 is returned
-    fn scale_delta(&self, bin: i32, start_bin: i32, length: usize) -> Option<i32> {
+    fn scale_delta(&self, bin: i32, start_bin: i32, length: usize) -> i32 {
         if length == 0 {
             // No need to rescale if there are no buckets.
-            return None;
+            return 0;
         }
         let (mut low, mut high) = if start_bin >= bin {
             (bin, start_bin + length as i32 - 1)
@@ -118,14 +152,14 @@ impl HistogramInner {
         };
         let mut count = 0i32;
         while (high - low) as i64 >= self.max_size {
-            low = low >> 1;
-            high = high >> 1;
+            low >>= 1;
+            high >>= 1;
             count += 1;
             if count > EXPO_MAX_SCALE - EXPO_MIN_SCALE {
                 break;
             }
         }
-        Some(count)
+        count
     }
 
     fn record(&mut self, value: f64) {
@@ -148,9 +182,8 @@ impl HistogramInner {
         } else {
             &self.positive_buckets
         };
-        let final_bin = if let Some(scale_delta) =
-            self.scale_delta(bin, buckets.start_bin, buckets.counts.len())
-        {
+        let scale_delta = self.scale_delta(bin, buckets.start_bin, buckets.counts.len());
+        let final_bin = if scale_delta != 0 {
             if self.scale - scale_delta < EXPO_MIN_SCALE {
                 // With a scale of -10 there are only two buckets for the whole
                 // range of f64 values.
@@ -162,6 +195,13 @@ impl HistogramInner {
             self.scale -= scale_delta;
             self.positive_buckets.downscale(scale_delta);
             self.negative_buckets.downscale(scale_delta);
+            debug_assert_eq!(
+                self.positive_buckets.counts.iter().sum::<u64>()
+                    + self.negative_buckets.counts.iter().sum::<u64>()
+                    + self.zero_count,
+                self.count - 1,
+                "combined buckets sum must equal total count"
+            );
             self.get_bin(abs_value)
         } else {
             bin
@@ -171,7 +211,14 @@ impl HistogramInner {
         } else {
             &mut self.positive_buckets
         };
-        buckets.record(final_bin)
+        buckets.record(final_bin);
+        debug_assert_eq!(
+            self.positive_buckets.counts.iter().sum::<u64>()
+                + self.negative_buckets.counts.iter().sum::<u64>()
+                + self.zero_count,
+            self.count,
+            "combined buckets sum must equal total count"
+        );
     }
 }
 
@@ -224,7 +271,7 @@ impl HistogramBuckets {
             self.counts.resize(new_len, 0);
             // NOTE(rossdylan): The arguments here are flipped from go's copy
             // builtin.
-            self.counts.copy_within(0..orig_len, 1);
+            self.counts.copy_within(0..orig_len, shift);
             for index in 1..shift {
                 self.counts[index] = 0;
             }
@@ -250,10 +297,10 @@ impl HistogramBuckets {
         // new Offset: -2
         // new Counts: [4, 14, 30, 10]
         if self.counts.len() <= 1 || delta < 1 {
-            self.start_bin = self.start_bin >> delta;
+            self.start_bin >>= delta;
             return;
         }
-        let steps = 1i32 << delta;
+        let steps = 1 << delta;
         let offset = self.start_bin % steps;
         let offset = (offset + steps) % steps; // to make offset positive
         for index in 1..self.counts.len() {
@@ -265,7 +312,7 @@ impl HistogramBuckets {
             self.counts[(idx / steps) as usize] += self.counts[index];
         }
         let last_idx = (self.counts.len() - 1 + offset as usize) / steps as usize;
-        self.counts.truncate(last_idx);
+        self.counts.truncate(last_idx + 1);
         self.start_bin >>= delta;
     }
 }
@@ -305,7 +352,8 @@ impl super::Recordable for Histogram {
     }
 
     fn value(&self) -> MetricValue {
-        tracing::debug!(message="found histogram", histogram=?self);
-        MetricValue::Histogram
+        let mut inner = self.inner.lock();
+        tracing::debug!(message="found histogram", histogram=?inner);
+        inner.get_and_reset()
     }
 }

@@ -1,3 +1,10 @@
+use std::{
+    collections::hash_map::Entry,
+    hash::{Hash, Hasher},
+    sync::LazyLock,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+
 use gxhash::{HashMap, HashSet};
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::{
@@ -5,21 +12,18 @@ use opentelemetry_proto::tonic::{
     },
     common::v1::{any_value::Value, AnyValue, KeyValue},
     metrics::v1::{
-        metric::Data as OTelMetricData, number_data_point, AggregationTemporality, Gauge,
-        Metric as OTelMetric, NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum,
+        exponential_histogram_data_point::Buckets, metric::Data as OTelMetricData,
+        number_data_point, AggregationTemporality, ExponentialHistogram,
+        ExponentialHistogramDataPoint, Gauge, Metric as OTelMetric, NumberDataPoint,
+        ResourceMetrics, ScopeMetrics, Sum,
     },
 };
 use parking_lot::{Mutex, RwLock};
 use smallvec::SmallVec;
-use std::{
-    collections::hash_map::Entry,
-    hash::{Hash, Hasher},
-    sync::LazyLock,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
 use tonic::transport::{Channel, Endpoint};
 
 use crate::metrics::{Metric, MetricValue, Recordable, Target};
+
 const DEFAULT_COLLECTOR_ADDR: &str = "http://localhost:4317";
 pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 const MID_SEED: i64 = 0xdeadbeef;
@@ -113,7 +117,9 @@ impl StartTs {
     }
 }
 
-pub struct Collector {
+/// The collector is used to run our periodic exports to some endpoint that
+/// speaks otel.
+struct Collector {
     registry: &'static Registry,
     client: MetricsServiceClient<Channel>,
     start_time_ts: Mutex<Option<StartTs>>,
@@ -123,6 +129,8 @@ pub struct Collector {
 
 impl Collector {
     async fn collect(&mut self) {
+        // XXX(rossdylan): All this start-ts nonsense is incorrect, it needs to
+        // be based on when we first start collecting data for a given metric
         let (start_ts, collection_ts) = self
             .start_time_ts
             .lock()
@@ -168,9 +176,41 @@ impl Collector {
                             value: Some(number_data_point::Value::AsInt(v)),
                         }],
                     }),
-                    MetricValue::Histogram => {
-                        continue;
-                    }
+                    MetricValue::Histogram {
+                        scale,
+                        count,
+                        zero_count,
+                        sum,
+                        min,
+                        max,
+                        positive,
+                        negative,
+                    } => OTelMetricData::ExponentialHistogram(ExponentialHistogram {
+                        aggregation_temporality: AggregationTemporality::Delta as i32,
+                        data_points: vec![ExponentialHistogramDataPoint {
+                            attributes,
+                            start_time_unix_nano: start_ts,
+                            time_unix_nano: collection_ts,
+                            exemplars: Vec::new(),
+                            flags: 0,
+                            count,
+                            scale,
+                            sum: Some(sum),
+                            zero_count,
+                            min: Some(min),
+                            max: Some(max),
+                            positive: Some(Buckets {
+                                offset: positive.0,
+                                bucket_counts: positive.1,
+                            }),
+                            negative: Some(Buckets {
+                                offset: negative.0,
+                                bucket_counts: negative.1,
+                            }),
+                            // TODO(rossdylan): wtf do I do here?
+                            zero_threshold: 0.0,
+                        }],
+                    }),
                 };
                 otel_metrics.push(OTelMetric {
                     name: metric.name.into(),
