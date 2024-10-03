@@ -263,6 +263,9 @@ impl Registry {
             metrics_gauge: metrics::REGISTERED_METRICS.must(&[]),
             export_latency_ms: metrics::EXPORT_LATENCY_MS.must(&[]),
         };
+        // Spawn our runtime metrics collector
+        tokio::spawn(crate::runtime::export_task());
+        // Spawn the metrics collector which will export over otel periodically
         tokio::spawn(async move {
             let mut collector = collector;
             let mut ticker = tokio::time::interval(Duration::from_secs(10));

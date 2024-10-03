@@ -13,6 +13,7 @@
 mod cmath;
 mod metrics;
 mod registry;
+mod runtime;
 
 use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram, MetricDef};
 
