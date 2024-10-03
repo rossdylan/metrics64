@@ -109,11 +109,8 @@ impl StartTs {
     /// Return our starting timestamp, and the current timestamp as nanoseconds since the
     /// unix epoch. We only support second resolution, so we take the seconds and convert into
     /// nanos instead of using a full nanosecond resolution.
-    pub fn now(&self) -> (u64, u64) {
-        (
-            self.unix_ns,
-            self.unix_ns + (self.instant.elapsed().as_secs() * NANOS_PER_SEC),
-        )
+    pub fn now(&self) -> u64 {
+        self.unix_ns + (self.instant.elapsed().as_secs() * NANOS_PER_SEC)
     }
 }
 
@@ -122,20 +119,14 @@ impl StartTs {
 struct Collector {
     registry: &'static Registry,
     client: MetricsServiceClient<Channel>,
-    start_time_ts: Mutex<Option<StartTs>>,
+    start_time_ts: Option<StartTs>,
     metrics_gauge: crate::Gauge,
     export_latency_ms: crate::Histogram,
 }
 
 impl Collector {
     async fn collect(&mut self) {
-        // XXX(rossdylan): All this start-ts nonsense is incorrect, it needs to
-        // be based on when we first start collecting data for a given metric
-        let (start_ts, collection_ts) = self
-            .start_time_ts
-            .lock()
-            .get_or_insert_with(StartTs::new)
-            .now();
+        let collection_ts = self.start_time_ts.get_or_insert_with(StartTs::new).now();
         let collection_start = Instant::now();
         let otel_metrics = {
             let metrics = self.registry.metrics.read();
@@ -157,7 +148,7 @@ impl Collector {
                     MetricValue::Counter(v) => OTelMetricData::Sum(Sum {
                         data_points: vec![NumberDataPoint {
                             attributes,
-                            start_time_unix_nano: start_ts,
+                            start_time_unix_nano: 0,
                             time_unix_nano: collection_ts,
                             exemplars: Vec::new(),
                             flags: 0,
@@ -189,7 +180,7 @@ impl Collector {
                         aggregation_temporality: AggregationTemporality::Delta as i32,
                         data_points: vec![ExponentialHistogramDataPoint {
                             attributes,
-                            start_time_unix_nano: start_ts,
+                            start_time_unix_nano: 0,
                             time_unix_nano: collection_ts,
                             exemplars: Vec::new(),
                             flags: 0,
@@ -225,7 +216,7 @@ impl Collector {
         // TODO(rossdylan): Report this as a histogram, and use it to understand if we need to parallelise
         // the collection loop using rayon or something
         let collection_dur = collection_start.elapsed();
-        tracing::debug!(message="collected metrics", collection_ts=collection_ts, start_ts=start_ts, duration=?collection_dur, metrics=otel_metrics.len());
+        tracing::debug!(message="collected metrics", collection_ts=collection_ts, duration=?collection_dur, metrics=otel_metrics.len());
 
         let export_res = self
             .client

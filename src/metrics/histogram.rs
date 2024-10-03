@@ -1,7 +1,7 @@
 use core::f64;
 use std::{
     any::Any,
-    f64::consts::LOG2_E,
+    f64::consts::{LN_2, LOG2_E},
     sync::{Arc, LazyLock},
     time::Duration,
 };
@@ -41,7 +41,6 @@ static SCALE_FACTORS: LazyLock<[f64; 21]> = LazyLock::new(|| {
         ldexp(LOG2_E, 20),
     ]
 });
-
 /// Our histogram will be the log-exponential based histogram defined by otel.
 /// Seems tdigest has fallen to the wayside, and the general consensus?? is
 /// log-exponential histograms are the thing. I think ddsketch, otel,
@@ -106,6 +105,7 @@ impl HistogramInner {
             ),
         };
         // now reset the histogram back to its defaults
+        // TODO(rossdylan): Do we want to preserve scale across resets to try and avoid thrash?
         self.scale = self.max_scale;
         self.count = 0;
         self.zero_count = 0;
@@ -160,6 +160,35 @@ impl HistogramInner {
             }
         }
         count
+    }
+
+    /// This is a helper function to determine the boundaries of each bucket in
+    /// the histogram. It is taken from the go implementation here:
+    /// https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/internal/otlptext/databuffer.go#L144
+    /// NOTE(rossdylan): The comments in the go source indicate that this is
+    /// inaccurate in certain situations, so for anything that needs actual
+    /// accuracy (ie, a tsdb impl) we'll need to implement a better way
+    fn boundaries(&self) -> Vec<(f64, f64)> {
+        let factor = ldexp(LN_2, -(self.scale as isize));
+        let mut bounds: Vec<(f64, f64)> = Vec::with_capacity(
+            self.negative_buckets.counts.len() + self.positive_buckets.counts.len(),
+        );
+        for index in 0..self.negative_buckets.counts.len() {
+            let pos = self.negative_buckets.counts.len() - index - 1;
+            let adjusted_index = (self.negative_buckets.start_bin + pos as i32) as f64;
+            bounds.push((
+                -((factor * adjusted_index).exp()),
+                -((factor * (adjusted_index + 1.0)).exp()),
+            ))
+        }
+        for index in 0..self.positive_buckets.counts.len() {
+            let adjusted_index = (self.positive_buckets.start_bin + index as i32) as f64;
+            bounds.push((
+                (factor * adjusted_index).exp(),
+                (factor * (adjusted_index + 1.0)).exp(),
+            ))
+        }
+        bounds
     }
 
     fn record(&mut self, value: f64) {
@@ -353,7 +382,7 @@ impl super::Recordable for Histogram {
 
     fn value(&self) -> MetricValue {
         let mut inner = self.inner.lock();
-        tracing::debug!(message="found histogram", histogram=?inner);
+        tracing::debug!(message="histogram.value", min=inner.min, max=inner.max, sum=inner.sum, count=inner.count, buckets=?inner.boundaries());
         inner.get_and_reset()
     }
 }
