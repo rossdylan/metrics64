@@ -84,16 +84,18 @@ pub struct Registry {
     interner: Interner,
 }
 
+/// I'm not entirely sure this is worth it. Instead of using a non-monotonic
+/// system time call for every export we use a base timestamp and a monotonic
+/// offset. This means that regardless of clock skew that happens after process
+/// start we'll always have an accurate timestamp.
+/// NOTE(rossdylan): This doesn't handle the case where our clocks are skewed
+/// from the start.
 #[derive(Copy, Clone)]
 pub struct StartTs {
     instant: Instant,
     unix_ns: u64,
 }
 
-/// This might be a turbo-over-optimization, but w/e. OTel wants both a start timestamp and a current timestamp
-/// for each sample. In order to make this easy, and avoid any problems with clock skew we record the current
-/// unix time once, and then use the monotonic clock provided by [`Instant`] to add seconds to our base
-/// time stamp whenever we need it.
 impl StartTs {
     pub fn new() -> Self {
         Self {
@@ -213,8 +215,8 @@ impl Collector {
             }
             otel_metrics
         };
-        // TODO(rossdylan): Report this as a histogram, and use it to understand if we need to parallelise
-        // the collection loop using rayon or something
+        // TODO(rossdylan): Use the duration histogram to see if we need to
+        // parallelize the collection loop using rayon or something.
         let collection_dur = collection_start.elapsed();
         tracing::debug!(message="collected metrics", collection_ts=collection_ts, duration=?collection_dur, metrics=otel_metrics.len());
 
