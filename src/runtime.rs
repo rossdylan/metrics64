@@ -7,9 +7,8 @@ use std::time::Duration;
 mod metrics {
     use crate::GaugeDef;
 
-    pub const TOKIO_ALIVE_TASKS: GaugeDef =
-        GaugeDef::new("tokio/tasks", crate::Target::Pod, &["state"]);
-    pub const TOKIO_WORKERS: GaugeDef = GaugeDef::new("tokio/workers", crate::Target::Pod, &[]);
+    pub const TOKIO_ALIVE_TASKS: GaugeDef = GaugeDef::new("tokio/tasks", &["state"]);
+    pub const TOKIO_WORKERS: GaugeDef = GaugeDef::new("tokio/workers", &[]);
 }
 
 /// Export tokio runtime metrics every 10 seconds

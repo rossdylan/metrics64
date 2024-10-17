@@ -17,7 +17,6 @@ mod runtime;
 
 use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram, MetricDef};
 
-pub use metrics::Target;
 pub use registry::DEFAULT_REGISTRY;
 
 pub type CounterDef = MetricDef<Counter>;

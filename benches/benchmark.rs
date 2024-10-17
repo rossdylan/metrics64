@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
-use metrics64::CounterDef;
+use metrics64::{CounterDef, HistogramDef};
 
 pub fn benchmark_must(c: &mut Criterion) {
     const DEF: CounterDef =
@@ -75,6 +75,23 @@ pub fn benchmark_counter(c: &mut Criterion) {
     });
 }
 
+pub fn benchmark_histogram(c: &mut Criterion) {
+    const DEF: HistogramDef = HistogramDef::new(
+        "metrics64/benchmarks/histogram/incr-one-tag",
+        metrics64::Target::Pod,
+        &["tag"],
+    );
+    c.bench_function("histogram-incr-1-tag", |b| {
+        let counter = DEF.must(&[("tag", "one")]);
+        b.iter(|| counter.record(200.0));
+    });
+    for i in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512] {
+        c.bench_function(&format!("histogram-incr-parallel-{i}"), |b| {
+            b.iter_custom(routine);
+        })
+    }
+}
+
 //pub fn profile_observe(c: &mut Criterion) {
 //    c.bench_function("profile-observe", |b| {
 //        let mut t = <TDigest>::new(100.0);
@@ -89,5 +106,10 @@ pub fn benchmark_counter(c: &mut Criterion) {
 //    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
 //    targets = profile_observe, profile_merge_bytes
 //}
-criterion_group!(benches, benchmark_must, benchmark_counter);
+criterion_group!(
+    benches,
+    benchmark_must,
+    benchmark_counter,
+    benchmark_histogram
+);
 criterion_main!(benches);

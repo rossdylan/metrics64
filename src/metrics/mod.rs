@@ -6,18 +6,10 @@ pub(crate) mod counter;
 pub(crate) mod gauge;
 pub(crate) mod histogram;
 
-/// An enum that defines a set of global location tags that are evalulated once per process
-/// to provide location/targetting information.
-#[derive(Debug, Copy, Clone)]
-pub enum Target {
-    /// Emit per-pod related location information
-    Pod,
-}
-
 /// A trait representing the public metric interface. This is common across all metric kinds, and slots into the
 /// general [`MetricDefinition`] to provide the backing implementation.
 pub trait Metric: Sized {
-    fn must(mid: u64) -> Self;
+    fn must() -> Self;
 }
 
 #[derive(Clone)]
@@ -86,7 +78,6 @@ impl TagSchema for &'static [&'static str] {
 pub struct MetricDef<M, T = &'static [&'static str]> {
     name: &'static str,
     tags: T,
-    target: Target,
     _kind: PhantomData<M>,
 }
 
@@ -95,11 +86,10 @@ where
     M: Metric + Recordable + Clone,
     T: TagSchema,
 {
-    pub const fn new(name: &'static str, target: Target, tags: T) -> Self {
+    pub const fn new(name: &'static str, tags: T) -> Self {
         Self {
             name,
             tags,
-            target,
             _kind: PhantomData,
         }
     }
@@ -118,6 +108,6 @@ where
     #[doc(hidden)]
     pub fn must_with_registry(&self, registry: &Registry, tags: T::Input<'_>) -> M {
         self.tags.validate(&tags);
-        registry.register(self.name, self.target, tags.tags())
+        registry.register(self.name, tags.tags())
     }
 }

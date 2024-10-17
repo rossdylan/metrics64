@@ -16,6 +16,31 @@ use parking_lot::Mutex;
 const EXPO_MAX_SCALE: i32 = 20;
 const EXPO_MIN_SCALE: i32 = -10;
 
+static BOUNDARY_FACTORS: LazyLock<[f64; 21]> = LazyLock::new(|| {
+    [
+        ldexp(LN_2, -0),
+        ldexp(LN_2, -1),
+        ldexp(LN_2, -2),
+        ldexp(LN_2, -3),
+        ldexp(LN_2, -4),
+        ldexp(LN_2, -5),
+        ldexp(LN_2, -6),
+        ldexp(LN_2, -7),
+        ldexp(LN_2, -8),
+        ldexp(LN_2, -9),
+        ldexp(LN_2, -10),
+        ldexp(LN_2, -11),
+        ldexp(LN_2, -12),
+        ldexp(LN_2, -13),
+        ldexp(LN_2, -14),
+        ldexp(LN_2, -15),
+        ldexp(LN_2, -16),
+        ldexp(LN_2, -17),
+        ldexp(LN_2, -18),
+        ldexp(LN_2, -19),
+        ldexp(LN_2, -20),
+    ]
+});
 static SCALE_FACTORS: LazyLock<[f64; 21]> = LazyLock::new(|| {
     [
         ldexp(LOG2_E, 0),
@@ -41,6 +66,7 @@ static SCALE_FACTORS: LazyLock<[f64; 21]> = LazyLock::new(|| {
         ldexp(LOG2_E, 20),
     ]
 });
+
 /// Our histogram will be the log-exponential based histogram defined by otel.
 /// Seems tdigest has fallen to the wayside, and the general consensus?? is
 /// log-exponential histograms are the thing. I think ddsketch, otel,
@@ -169,7 +195,7 @@ impl HistogramInner {
     /// inaccurate in certain situations, so for anything that needs actual
     /// accuracy (ie, a tsdb impl) we'll need to implement a better way
     fn boundaries(&self) -> Vec<(f64, f64)> {
-        let factor = ldexp(LN_2, -(self.scale as isize));
+        let factor = BOUNDARY_FACTORS[self.scale as usize];
         let mut bounds: Vec<(f64, f64)> = Vec::with_capacity(
             self.negative_buckets.counts.len() + self.positive_buckets.counts.len(),
         );
@@ -368,7 +394,7 @@ impl Histogram {
 }
 
 impl super::Metric for Histogram {
-    fn must(_mid: u64) -> Self {
+    fn must() -> Self {
         Self {
             inner: Default::default(),
         }
@@ -384,5 +410,38 @@ impl super::Recordable for Histogram {
         let mut inner = self.inner.lock();
         tracing::debug!(message="histogram.value", min=inner.min, max=inner.max, sum=inner.sum, count=inner.count, buckets=?inner.boundaries());
         inner.get_and_reset()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use core::f64;
+
+    use super::Histogram;
+
+    #[test]
+    fn min_max_float() {
+        let hist = Histogram::default();
+        hist.record(f64::MIN);
+        hist.record(f64::MAX);
+        println!("{:?}", hist.inner.lock().boundaries());
+    }
+
+    #[test]
+    fn increments() {
+        let hist = Histogram::default();
+        for i in 0..20_000 {
+            hist.record(i as f64);
+        }
+        println!("{:?}", hist.inner.lock().boundaries());
+    }
+
+    #[test]
+    fn negative_increments() {
+        let hist = Histogram::default();
+        for i in -20_000..0 {
+            hist.record(i as f64);
+        }
+        println!("{:?}", hist.inner.lock().boundaries());
     }
 }

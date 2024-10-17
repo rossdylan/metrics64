@@ -24,7 +24,7 @@ impl Counter {
 }
 
 impl super::Metric for Counter {
-    fn must(_mid: u64) -> Self {
+    fn must() -> Self {
         Self {
             inner: Default::default(),
         }

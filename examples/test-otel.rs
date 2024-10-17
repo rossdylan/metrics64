@@ -2,10 +2,8 @@ use std::time::{Duration, Instant};
 
 use metrics64::{CounterDef, HistogramDef};
 
-const METRIC: CounterDef =
-    CounterDef::new("metrics64/test_counter", metrics64::Target::Pod, &["test"]);
-const WAIT_METRIC: HistogramDef =
-    HistogramDef::new("metrics64/test_latency_ms", metrics64::Target::Pod, &[]);
+const METRIC: CounterDef = CounterDef::new("metrics64/test_counter", &["test"]);
+const WAIT_METRIC: HistogramDef = HistogramDef::new("metrics64/test_latency_ms", &[]);
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();

@@ -29,7 +29,7 @@ impl Gauge {
 }
 
 impl super::Metric for Gauge {
-    fn must(_mid: u64) -> Self {
+    fn must() -> Self {
         Self {
             inner: Default::default(),
         }

@@ -22,7 +22,7 @@ use parking_lot::{Mutex, RwLock};
 use smallvec::SmallVec;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::metrics::{Metric, MetricValue, Recordable, Target};
+use crate::metrics::{Metric, MetricValue, Recordable};
 
 const DEFAULT_COLLECTOR_ADDR: &str = "http://localhost:4317";
 pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
@@ -31,7 +31,6 @@ const NANOS_PER_SEC: u64 = 1_000_000_000;
 
 struct MetricMetadata {
     name: &'static str,
-    target: Target,
     tags: SmallVec<[(&'static str, &'static str); 8]>,
     metric: Box<dyn Recordable>,
 }
@@ -39,13 +38,11 @@ struct MetricMetadata {
 impl MetricMetadata {
     pub fn new<R: Recordable>(
         name: &'static str,
-        target: Target,
         tags: SmallVec<[(&'static str, &'static str); 8]>,
         metric: R,
     ) -> Self {
         Self {
             name,
-            target,
             tags,
             metric: Box::new(metric),
         }
@@ -298,7 +295,6 @@ impl Registry {
     pub fn register<R: Recordable + Metric + Clone>(
         &self,
         name: &'static str,
-        target: Target,
         tags: &[(&str, &str)],
     ) -> R {
         // NOTE(rossdylan): We are trying to be clever here by interning, de-duping
@@ -325,8 +321,8 @@ impl Registry {
                 .cloned()
                 .expect("attempted to register metric with same mid with different type"),
             Entry::Vacant(ve) => {
-                let metric = R::must(mid);
-                ve.insert(MetricMetadata::new(name, target, tags, metric.clone()));
+                let metric = R::must();
+                ve.insert(MetricMetadata::new(name, tags, metric.clone()));
                 metric
             }
         }
@@ -336,24 +332,17 @@ impl Registry {
 pub(crate) mod metrics {
     use crate::{GaugeDef, HistogramDef};
 
-    pub const REGISTERED_METRICS: GaugeDef =
-        GaugeDef::new("metrics64/registry/metrics", crate::Target::Pod, &[]);
-    pub const EXPORT_LATENCY_MS: HistogramDef = HistogramDef::new(
-        "metrics64/registry/export_latency_ms",
-        crate::Target::Pod,
-        &[],
-    );
+    pub const REGISTERED_METRICS: GaugeDef = GaugeDef::new("metrics64/registry/metrics", &[]);
+    pub const EXPORT_LATENCY_MS: HistogramDef =
+        HistogramDef::new("metrics64/registry/export_latency_ms", &[]);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::CounterDef;
-    const ALLEYCAT_CLIENT: CounterDef = CounterDef::new(
-        "alleycat/client/requests",
-        Target::Pod,
-        &["service", "method", "status"],
-    );
+    const ALLEYCAT_CLIENT: CounterDef =
+        CounterDef::new("alleycat/client/requests", &["service", "method", "status"]);
 
     #[test]
     fn test_counter_must() {
