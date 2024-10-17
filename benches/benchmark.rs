@@ -8,14 +8,12 @@ pub fn benchmark_must(c: &mut Criterion) {
         CounterDef::new("metrics64/benchmarks/one-tag", metrics64::Target::Pod, &["tag"]);
     const NINE_TAGS_DEF: CounterDef = CounterDef::new(
         "metrics64/benchmarks/nine-tag",
-        metrics64::Target::Pod,
         &[
             "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
         ],
     );
     const EIGHT_TAGS_DEF: CounterDef = CounterDef::new(
         "metrics64/benchmarks/eight-tag",
-        metrics64::Target::Pod,
         &[
             "one", "two", "three", "four", "five", "six", "seven", "eight",
         ],
@@ -60,11 +58,7 @@ pub fn benchmark_must(c: &mut Criterion) {
 }
 
 pub fn benchmark_counter(c: &mut Criterion) {
-    const DEF: CounterDef = CounterDef::new(
-        "metrics64/benchmarks/counter/incr-one-tag",
-        metrics64::Target::Pod,
-        &["tag"],
-    );
+    const DEF: CounterDef = CounterDef::new("metrics64/benchmarks/counter/incr-one-tag", &["tag"]);
     c.bench_function("counter-incr-1-tag", |b| {
         let counter = DEF.must(&[("tag", "one")]);
         b.iter(|| counter.incr());
@@ -76,20 +70,12 @@ pub fn benchmark_counter(c: &mut Criterion) {
 }
 
 pub fn benchmark_histogram(c: &mut Criterion) {
-    const DEF: HistogramDef = HistogramDef::new(
-        "metrics64/benchmarks/histogram/incr-one-tag",
-        metrics64::Target::Pod,
-        &["tag"],
-    );
+    const DEF: HistogramDef =
+        HistogramDef::new("metrics64/benchmarks/histogram/incr-one-tag", &["tag"]);
     c.bench_function("histogram-incr-1-tag", |b| {
         let counter = DEF.must(&[("tag", "one")]);
         b.iter(|| counter.record(200.0));
     });
-    for i in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512] {
-        c.bench_function(&format!("histogram-incr-parallel-{i}"), |b| {
-            b.iter_custom(routine);
-        })
-    }
 }
 
 //pub fn profile_observe(c: &mut Criterion) {
