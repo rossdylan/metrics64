@@ -1,11 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use pprof::criterion::{Output, PProfProfiler};
 
 use metrics64::{CounterDef, HistogramDef};
 
 pub fn benchmark_must(c: &mut Criterion) {
-    const DEF: CounterDef =
-        CounterDef::new("metrics64/benchmarks/one-tag", metrics64::Target::Pod, &["tag"]);
+    const DEF: CounterDef = CounterDef::new("metrics64/benchmarks/one-tag", &["tag"]);
     const NINE_TAGS_DEF: CounterDef = CounterDef::new(
         "metrics64/benchmarks/nine-tag",
         &[
