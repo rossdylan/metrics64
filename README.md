@@ -51,13 +51,13 @@ use.
 
 # Core Ideas
 
-1. There are no knobs. I don't want to have a ton of boiler plate to configure.
+1. **There are no knobs.** I don't want to have a ton of boiler plate to configure.
   a. Its just otel. Open Telemetry is a large consensus driven project, so naturally I'm not stoked about how complex their api is. BUT they're api is push based and has good support for log-exponential histograms.
   b. Only provide a single pretty good option for Counters, Gauges, and Histograms
 2. It **must** support some kind of dynamic histogram.
   a. The library I used at my previous job had a tdigest implementation built in. It was the greatest thing since sliced bread. I never want to think about choosing histogram buckets, or how to aggregate that data across machines.
-3. A minimum of _type level magic_. Just enough to keep things pleasant to use, but not enough to require a PHD to undersand.
-4. Creation of a new metric can be slow-ish, but usage of said metric can't
+3. **A minimum of _type level magic_.** Just enough to keep things pleasant to use, but not enough to require a PHD to understand.
+4. **Creation of a new metric can be relatively slow**, but usage of said metric can't
 
 # Benchmarks
 These are worthless, its just running on my M2 Macbook Air.
