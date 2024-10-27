@@ -52,7 +52,7 @@ use.
 # Core Ideas
 
 1. **There are no knobs.** I don't want to have a ton of boiler plate to configure.
-  a. Its just otel. Open Telemetry is a large consensus driven project, so naturally I'm not stoked about how complex their api is. BUT they're api is push based and has good support for log-exponential histograms.
+  a. Its just otel. Open Telemetry is a large consensus driven project, so naturally I'm not stoked about how complex their api is. BUT their api is push based and has good support for log-exponential histograms.
   b. Only provide a single pretty good option for Counters, Gauges, and Histograms
 2. It **must** support some kind of dynamic histogram.
   a. The library I used at my previous job had a tdigest implementation built in. It was the greatest thing since sliced bread. I never want to think about choosing histogram buckets, or how to aggregate that data across machines.
