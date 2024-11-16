@@ -7,23 +7,23 @@ edition = "2021"
 
 [dependencies]
 twox-hash = "2.0.1"
-libc = "0.2.158"
-opentelemetry-proto = { version = "0.26.0", default-features = false, features = [
+libc = "0.2.164"
+opentelemetry-proto = { version = "0.27.0", default-features = false, features = [
     "gen-tonic",
     "metrics",
 ] }
-opentelemetry-semantic-conventions = "0.26.0"
+opentelemetry-semantic-conventions = "0.27.0"
 parking_lot = "0.12.3"
 smallvec = "1.13.2"
-tokio = { version = "1.40.0", features = ["time"] }
+tokio = { version = "1.41.1", features = ["time"] }
 tonic = "0.12.2"
 tracing = "0.1.40"
 
 [dev-dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.93"
 criterion = "0.5"
-pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
-tokio = { version = "1.40.0", features = ["full"] }
+pprof = { version = "0.14", features = ["flamegraph", "criterion"] }
+tokio = { version = "1.41.1", features = ["full"] }
 tracing-subscriber = "0.3.18"
 
 [[bench]]
