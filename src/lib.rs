@@ -11,6 +11,7 @@
 //! 3. no crazy macro magic. Try and leverage the type system and runtime amortization to deal with the complexity
 
 mod cmath;
+mod collector;
 mod metrics;
 mod registry;
 mod runtime;
