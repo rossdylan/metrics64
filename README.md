@@ -63,11 +63,11 @@ use.
 These are worthless, its just running on my M2 Macbook Air.
 
 ```
-must-1-tag-new          time:   [444.45 ns 449.38 ns 455.69 ns]
-must-1-tag-existing     time:   [48.223 ns 48.274 ns 48.330 ns]
-must-8-tags             time:   [332.76 ns 333.36 ns 333.93 ns]
-must-9-tags             time:   [441.40 ns 442.30 ns 443.37 ns]
-counter-incr-1-tag      time:   [1.9861 ns 1.9907 ns 1.9956 ns]
-counter-clone-1-tag     time:   [3.7396 ns 3.7440 ns 3.7493 ns]
-histogram-incr-1-tag    time:   [9.0636 ns 9.0749 ns 9.0865 ns]
+must-1-tag-new          time:   [486.87 ns 496.58 ns 509.01 ns]
+must-1-tag-existing     time:   [99.525 ns 99.879 ns 100.33 ns]
+must-8-tags             time:   [521.02 ns 526.21 ns 535.00 ns]
+must-9-tags             time:   [645.92 ns 647.15 ns 648.52 ns]
+counter-incr-1-tag      time:   [1.9757 ns 1.9789 ns 1.9827 ns]
+counter-clone-1-tag     time:   [3.8596 ns 3.8895 ns 3.9201 ns]
+histogram-incr-1-tag    time:   [9.0796 ns 9.1005 ns 9.1245 ns]
 ```

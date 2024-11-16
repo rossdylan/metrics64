@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gxhash = "3.4.1"
+twox-hash = "2.0.1"
 libc = "0.2.158"
 opentelemetry-proto = { version = "0.26.0", default-features = false, features = [
     "gen-tonic",

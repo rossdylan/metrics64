@@ -1,11 +1,10 @@
 use std::{
-    collections::hash_map::Entry,
+    collections::{hash_map::Entry, HashMap, HashSet},
     hash::{Hash, Hasher},
     sync::LazyLock,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use gxhash::{HashMap, HashSet};
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::{
         metrics_service_client::MetricsServiceClient, ExportMetricsServiceRequest,
@@ -26,7 +25,7 @@ use crate::metrics::{Metric, MetricValue, Recordable};
 
 const DEFAULT_COLLECTOR_ADDR: &str = "http://localhost:4317";
 pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
-const MID_SEED: i64 = 0xdeadbeef;
+const MID_SEED: u64 = 0xdeadbeef;
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
 struct MetricMetadata {
@@ -282,7 +281,7 @@ impl Registry {
     /// NOTE(rossdylan): tags **must** be sorted to get an accurate mid
     fn mid(&self, name: &str, tags: &[(&str, &str)]) -> u64 {
         debug_assert!(tags.is_sorted());
-        let mut hasher = gxhash::GxHasher::with_seed(MID_SEED);
+        let mut hasher = twox_hash::XxHash64::with_seed(MID_SEED);
         name.hash(&mut hasher);
         tags.hash(&mut hasher);
         hasher.finish()
