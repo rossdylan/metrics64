@@ -77,15 +77,16 @@ impl Registry {
         }
     }
 
-    pub fn start(&'static self) {
-        self.start_with_url(DEFAULT_COLLECTOR_ADDR.into());
+    pub fn start(&'static self, service: &str) {
+        self.start_with_url(Some(service), DEFAULT_COLLECTOR_ADDR.into());
     }
 
-    pub fn start_with_url(&'static self, collector_url: String) {
+    pub fn start_with_url(&'static self, service: Option<&str>, collector_url: String) {
         let channel = Endpoint::from_shared(collector_url)
             .expect("collector endpoint must be valid")
             .connect_lazy();
-        let collector = crate::collector::Collector::new(self, MetricsServiceClient::new(channel));
+        let collector =
+            crate::collector::Collector::new(service, self, MetricsServiceClient::new(channel));
         // Spawn our runtime metrics collector
         tokio::spawn(crate::runtime::export_task());
         // Spawn the metrics collector which will export over otel periodically

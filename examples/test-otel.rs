@@ -7,7 +7,7 @@ const WAIT_METRIC: HistogramDef = HistogramDef::new("metrics64/test_latency_ms",
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
-    metrics64::DEFAULT_REGISTRY.start();
+    metrics64::DEFAULT_REGISTRY.start("test-otel");
     let counter = METRIC.must(&[("test", "value")]);
     let hist = WAIT_METRIC.must(&[]);
     let mut ticker = tokio::time::interval(Duration::from_millis(500));

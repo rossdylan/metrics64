@@ -1,7 +1,12 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    env,
+    sync::OnceLock,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
+use gethostname::gethostname;
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::{
         metrics_service_client::MetricsServiceClient, ExportMetricsServiceRequest,
@@ -13,8 +18,10 @@ use opentelemetry_proto::tonic::{
         ExponentialHistogramDataPoint, Gauge, Metric as OTelMetric, NumberDataPoint,
         ResourceMetrics, ScopeMetrics, Sum,
     },
+    resource::v1::Resource,
 };
 use tonic::transport::Channel;
+use uuid::Uuid;
 
 use crate::{metrics::MetricValue, registry::Registry};
 
@@ -24,6 +31,79 @@ pub(crate) mod metrics {
     pub const REGISTERED_METRICS: GaugeDef = GaugeDef::new("metrics64/registry/metrics", &[]);
     pub const EXPORT_LATENCY_MS: HistogramDef =
         HistogramDef::new("metrics64/registry/export_latency_ms", &[]);
+}
+
+pub struct ProcessAttributes {
+    pub hostname: String,
+    pub command: Option<String>,
+    pub instance: Uuid,
+}
+
+/// Cache our hostname in a [`OnceLock`] so we don't call [`gethostname`] a bunch
+/// TODO(rossdylan): Do we care if the hostname changes?
+pub fn process_attributes() -> &'static ProcessAttributes {
+    static PROC_ATTR_ONCE: OnceLock<ProcessAttributes> = OnceLock::new();
+    PROC_ATTR_ONCE.get_or_init(|| ProcessAttributes {
+        hostname: gethostname()
+            .into_string()
+            .expect("gethostname should return a valid utf8 string"),
+        command: env::args().next(),
+        // TODO(rossdylan): I'm not sold on this whole instance-id thing
+        instance: Uuid::new_v4(),
+    })
+}
+
+/// We create a static set of otel resource attributes that will be cached for
+/// the lifetime of this process.
+/// TODO(rossdylan): We'll need to expand this to kube and containers at some point
+pub fn resource_attributes(service: Option<&str>) -> Vec<KeyValue> {
+    let procattr = process_attributes();
+    let svc_name = match (service, procattr.command.as_deref()) {
+        (Some(svc), _) => svc.to_string(),
+        (None, Some(cli)) => format!("unknown_service:{cli}"),
+        (None, None) => "unknown_service".to_string(),
+    };
+    let mut attrs = vec![
+        KeyValue {
+            key: "service.name".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue(svc_name)),
+            }),
+        },
+        KeyValue {
+            key: "service.instance.id".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue(procattr.instance.to_string())),
+            }),
+        },
+        KeyValue {
+            key: "host.name".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue(procattr.hostname.clone())),
+            }),
+        },
+        KeyValue {
+            key: "telemetry.sdk.language".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue("rust".to_string())),
+            }),
+        },
+        KeyValue {
+            key: "telemetry.sdk.name".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue("metrics64".to_string())),
+            }),
+        },
+    ];
+    if let Some(cli) = &procattr.command {
+        attrs.push(KeyValue {
+            key: "process.executable.name".to_string(),
+            value: Some(AnyValue {
+                value: Some(Value::StringValue(cli.clone())),
+            }),
+        })
+    }
+    attrs
 }
 
 /// I'm not entirely sure this is worth it. Instead of using a non-monotonic
@@ -64,16 +144,22 @@ pub struct Collector {
     registry: &'static Registry,
     client: MetricsServiceClient<Channel>,
     start_time_ts: Option<StartTs>,
+    resource_attrs: Vec<KeyValue>,
     metrics_gauge: crate::Gauge,
     export_latency_ms: crate::Histogram,
 }
 
 impl Collector {
-    pub fn new(registry: &'static Registry, client: MetricsServiceClient<Channel>) -> Self {
+    pub fn new(
+        service: Option<&str>,
+        registry: &'static Registry,
+        client: MetricsServiceClient<Channel>,
+    ) -> Self {
         Self {
             registry,
             client,
             start_time_ts: None,
+            resource_attrs: resource_attributes(service),
             metrics_gauge: metrics::REGISTERED_METRICS.must(&[]),
             export_latency_ms: metrics::EXPORT_LATENCY_MS.must(&[]),
         }
@@ -176,8 +262,10 @@ impl Collector {
             .client
             .export(ExportMetricsServiceRequest {
                 resource_metrics: vec![ResourceMetrics {
-                    // TODO(rossdylan): This should be common tags for this process
-                    resource: None,
+                    resource: Some(Resource {
+                        attributes: self.resource_attrs.clone(),
+                        dropped_attributes_count: 0,
+                    }),
                     scope_metrics: vec![ScopeMetrics {
                         scope: None,
                         metrics: otel_metrics,
