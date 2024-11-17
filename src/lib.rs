@@ -16,7 +16,8 @@ mod metrics;
 mod registry;
 mod runtime;
 
-use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram, MetricDef};
+use metrics::MetricDef;
+pub use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram};
 
 pub use registry::DEFAULT_REGISTRY;
 
