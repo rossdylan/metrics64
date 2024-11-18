@@ -45,7 +45,7 @@ did, however _just work_, and made it dead simple to add new metrics to your
 software.
 
 Since I've left that job I've thought a lot about that library. Especially as I
-struggle to get that same ease of use in both my personal and profession work.
+struggle to get that same ease of use in both my personal and professional work.
 Metrics64 is my attempt to make a rust metrics library that I actaully want to
 use.
 
