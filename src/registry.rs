@@ -125,12 +125,12 @@ impl Registry {
         // NOTE(rossdylan): We are trying to be clever here by interning, de-duping
         // and stack-allocating our tags all in one go. For small sets of tags that
         // we've seen before this avoids allocating entirely. However we do pay
-        // a general penality for all the lookups and locking involved.
+        // a general penalty for all the lookups and locking involved.
         let mut tags = self.interner.intern_tags(tags);
 
         // To ensure consistent MID generation we sort and dedupe our tags.
         // TODO(rossdylan): If we can sort and dedupe in the intern phase we
-        // could potentially reduce the allocations required when pathalogical
+        // could potentially reduce the allocations required when pathological
         // duplicated tags are input.
         tags.sort_unstable();
         tags.dedup();

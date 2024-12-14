@@ -1,5 +1,5 @@
 //! Re-export Ldexp and Frexp from c so we can match the go implementation
-//! Alas, I am comitting some crimes. Rust deprecated and removed these methods
+//! Alas, I am committing some crimes. Rust deprecated and removed these methods
 //! on f64 years ago, but it doesn't appear there are easy to use alternatives
 //! so I'm re-exporting them from c. I think this will match whatever the other
 //! otel implementations use, but who knows. The rust one just does a software
