@@ -94,13 +94,10 @@ where
         }
     }
 
-    /// A note about the ordering here.
-    /// I think we can push most of the underyling metric storage/allocation down into the registry. So instead
-    /// of the current back and forth with mid, get, register we just call `create` or something and internally
-    /// the registry sets up our singular storage location for metadata and the metric itself and just returns
-    /// the core metric. This should allow us to avoid having to spread the allocations for metric metadata
-    /// into each of the individual metrics and instead we can keep them all together in the hashmap. or
-    /// maybe we use a slab/pool since its all pretty small.
+    /// Must creates an instance of this metric using the provided tags. If the
+    /// tags are invalid this method panics.
+    /// TODO(rossdylan): This is named based on the terms from v2stats, but its
+    /// not very rust...
     pub fn must(&self, tags: T::Input<'_>) -> M {
         self.must_with_registry(&DEFAULT_REGISTRY, tags)
     }

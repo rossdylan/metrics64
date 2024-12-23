@@ -1,12 +1,13 @@
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     hash::{Hash, Hasher},
-    sync::LazyLock,
+    sync::{LazyLock, OnceLock},
     time::Duration,
 };
 
+use dashmap::DashSet;
 use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_client::MetricsServiceClient;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use smallvec::SmallVec;
 use tonic::transport::Endpoint;
 
@@ -20,6 +21,9 @@ pub struct MetricMetadata {
     pub name: &'static str,
     pub tags: SmallVec<[(&'static str, &'static str); 8]>,
     pub metric: Box<dyn Recordable>,
+    /// The unix timestamp of when this metric was first exported. This is used
+    /// by otel to track process restarts
+    pub export_start_ts: OnceLock<u64>,
 }
 
 impl MetricMetadata {
@@ -32,13 +36,14 @@ impl MetricMetadata {
             name,
             tags,
             metric: Box::new(metric),
+            export_start_ts: OnceLock::new(),
         }
     }
 }
 
 #[derive(Default)]
 struct Interner {
-    inner: Mutex<HashSet<&'static str>>,
+    inner: DashSet<&'static str>,
 }
 
 impl Interner {
@@ -46,10 +51,9 @@ impl Interner {
     /// track them in a [`HashSet`]. Ideally we'd arena allocate the actual strings
     /// instead of littering them across the heap.
     fn intern_tags(&self, tags: &[(&str, &str)]) -> SmallVec<[(&'static str, &'static str); 8]> {
-        let mut inner = self.inner.lock();
-        let intern = |i: &mut HashSet<&'static str>, s| -> &'static str {
+        let intern = |i: &DashSet<&'static str>, s| -> &'static str {
             if let Some(is) = i.get(s) {
-                is
+                *is
             } else {
                 let s = String::from(s);
                 let leaked: &'static str = Box::leak(s.into_boxed_str());
@@ -58,7 +62,7 @@ impl Interner {
             }
         };
         tags.iter()
-            .map(|(k, v)| (intern(&mut inner, *k), intern(&mut inner, *v)))
+            .map(|(k, v)| (intern(&self.inner, *k), intern(&self.inner, *v)))
             .collect()
     }
 }

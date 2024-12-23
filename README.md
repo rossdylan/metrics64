@@ -8,7 +8,7 @@ It is **not**:
 * Designed for minimum memory usage
 
 It **is**
-* A pretty easy to use otel implemenation
+* A pretty easy to use otel implementation
 * Designed to be dead simple to add new metrics
 ## API
 ```rust
@@ -46,7 +46,7 @@ software.
 
 Since I've left that job I've thought a lot about that library. Especially as I
 struggle to get that same ease of use in both my personal and professional work.
-Metrics64 is my attempt to make a rust metrics library that I actaully want to
+Metrics64 is my attempt to make a rust metrics library that I actually want to
 use.
 
 # Core Ideas

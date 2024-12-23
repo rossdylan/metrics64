@@ -28,37 +28,50 @@ use crate::{metrics::MetricValue, registry::Registry};
 pub(crate) mod metrics {
     use crate::{GaugeDef, HistogramDef};
 
+    /// A gauge tracking how many metrics we have registered in this process
     pub const REGISTERED_METRICS: GaugeDef = GaugeDef::new("metrics64/registry/metrics", &[]);
+
+    /// A histogram tracking the latency of our export calls.
     pub const EXPORT_LATENCY_MS: HistogramDef =
         HistogramDef::new("metrics64/registry/export_latency_ms", &[]);
 }
 
+/// A struct containing all of our process global tags. These are discovered
+/// lazily at first export.
 pub struct ProcessAttributes {
+    /// The hostname of the node running this process
     pub hostname: String,
+    /// The binary name for this process
     pub command: Option<String>,
+    /// A unique uuid assigned at process start. This is an otel-ism which is
+    /// used to track process state in the otel collector
     pub instance: Uuid,
 }
 
-/// Cache our hostname in a [`OnceLock`] so we don't call [`gethostname`] a bunch
-/// TODO(rossdylan): Do we care if the hostname changes?
-pub fn process_attributes() -> &'static ProcessAttributes {
-    static PROC_ATTR_ONCE: OnceLock<ProcessAttributes> = OnceLock::new();
-    PROC_ATTR_ONCE.get_or_init(|| ProcessAttributes {
-        hostname: gethostname()
-            .into_string()
-            .expect("gethostname should return a valid utf8 string"),
-        command: env::args().next(),
-        // TODO(rossdylan): I'm not sold on this whole instance-id thing
-        instance: Uuid::new_v4(),
-    })
+impl ProcessAttributes {
+    /// Cache our hostname and other 'static' process information using a [`OnceLock`]
+    // so we don't call things like [`gethostname`] a bunch.
+    pub fn get() -> &'static Self {
+        static PROC_ATTR_ONCE: OnceLock<ProcessAttributes> = OnceLock::new();
+        PROC_ATTR_ONCE.get_or_init(|| ProcessAttributes {
+            hostname: gethostname()
+                .into_string()
+                .expect("gethostname should return a valid utf8 string"),
+            command: env::args().next(),
+            // TODO(rossdylan): I'm not sold on this whole instance-id thing.
+            instance: Uuid::new_v4(),
+        })
+    }
 }
 
 /// We create a static set of otel resource attributes that will be cached for
 /// the lifetime of this process.
+/// A lot of this is just following the otel tag conventions to ensure we gather
+/// data in a compatible way.
 /// TODO(rossdylan): We'll need to expand this to kube and containers at some point
 pub fn resource_attributes(service: Option<&str>) -> Vec<KeyValue> {
-    let procattr = process_attributes();
-    let svc_name = match (service, procattr.command.as_deref()) {
+    let proc_attr = ProcessAttributes::get();
+    let svc_name = match (service, proc_attr.command.as_deref()) {
         (Some(svc), _) => svc.to_string(),
         (None, Some(cli)) => format!("unknown_service:{cli}"),
         (None, None) => "unknown_service".to_string(),
@@ -73,13 +86,13 @@ pub fn resource_attributes(service: Option<&str>) -> Vec<KeyValue> {
         KeyValue {
             key: "service.instance.id".to_string(),
             value: Some(AnyValue {
-                value: Some(Value::StringValue(procattr.instance.to_string())),
+                value: Some(Value::StringValue(proc_attr.instance.to_string())),
             }),
         },
         KeyValue {
             key: "host.name".to_string(),
             value: Some(AnyValue {
-                value: Some(Value::StringValue(procattr.hostname.clone())),
+                value: Some(Value::StringValue(proc_attr.hostname.clone())),
             }),
         },
         KeyValue {
@@ -95,7 +108,7 @@ pub fn resource_attributes(service: Option<&str>) -> Vec<KeyValue> {
             }),
         },
     ];
-    if let Some(cli) = &procattr.command {
+    if let Some(cli) = &proc_attr.command {
         attrs.push(KeyValue {
             key: "process.executable.name".to_string(),
             value: Some(AnyValue {
@@ -173,6 +186,7 @@ impl Collector {
             let mut otel_metrics = Vec::with_capacity(metrics.len());
             self.metrics_gauge.set(metrics.len() as i64);
             for metric in metrics.values() {
+                let start_ts = *metric.export_start_ts.get_or_init(|| collection_ts);
                 let value = metric.metric.value();
                 let attributes: Vec<KeyValue> = metric
                     .tags
@@ -188,7 +202,7 @@ impl Collector {
                     MetricValue::Counter(v) => OTelMetricData::Sum(Sum {
                         data_points: vec![NumberDataPoint {
                             attributes,
-                            start_time_unix_nano: 0,
+                            start_time_unix_nano: start_ts,
                             time_unix_nano: collection_ts,
                             exemplars: Vec::new(),
                             flags: 0,
@@ -200,7 +214,7 @@ impl Collector {
                     MetricValue::Gauge(v) => OTelMetricData::Gauge(Gauge {
                         data_points: vec![NumberDataPoint {
                             attributes,
-                            start_time_unix_nano: 0,
+                            start_time_unix_nano: start_ts,
                             time_unix_nano: collection_ts,
                             exemplars: Vec::new(),
                             flags: 0,
@@ -220,7 +234,7 @@ impl Collector {
                         aggregation_temporality: AggregationTemporality::Delta as i32,
                         data_points: vec![ExponentialHistogramDataPoint {
                             attributes,
-                            start_time_unix_nano: 0,
+                            start_time_unix_nano: start_ts,
                             time_unix_nano: collection_ts,
                             exemplars: Vec::new(),
                             flags: 0,

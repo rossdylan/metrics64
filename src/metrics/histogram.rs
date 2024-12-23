@@ -130,8 +130,9 @@ impl HistogramInner {
                 self.negative_buckets.counts.clone(),
             ),
         };
-        // now reset the histogram back to its defaults
-        // TODO(rossdylan): Do we want to preserve scale across resets to try and avoid thrash?
+        // Now reset the histogram back to its defaults. This is required
+        // because metrics64 is all delta based, so we need to completely reset
+        // every time.
         self.scale = self.max_scale;
         self.count = 0;
         self.zero_count = 0;
