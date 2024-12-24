@@ -3,7 +3,7 @@ use std::{
     any::Any,
     f64::consts::{LN_2, LOG2_E},
     sync::{Arc, LazyLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -391,6 +391,26 @@ impl Histogram {
 
     pub fn record_duration_ms(&self, value: Duration) {
         self.inner.lock().record(value.as_millis() as f64)
+    }
+
+    /// Record the millisecond duration of a given block by using a guard
+    /// structure that records an observation when it is dropped
+    pub fn record_block_ms(&self) -> HistogramRecordGuard {
+        HistogramRecordGuard {
+            start: Instant::now(),
+            inner: self,
+        }
+    }
+}
+
+pub struct HistogramRecordGuard<'a> {
+    start: Instant,
+    inner: &'a Histogram,
+}
+
+impl Drop for HistogramRecordGuard<'_> {
+    fn drop(&mut self) {
+        self.inner.record_duration_ms(self.start.elapsed());
     }
 }
 
