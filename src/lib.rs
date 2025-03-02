@@ -15,6 +15,7 @@ mod collector;
 mod metrics;
 mod registry;
 mod runtime;
+mod utils;
 
 use metrics::MetricDef;
 pub use metrics::{counter::Counter, gauge::Gauge, histogram::Histogram};

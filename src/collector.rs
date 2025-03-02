@@ -4,8 +4,6 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-const NANOS_PER_SEC: u64 = 1_000_000_000;
-
 use gethostname::gethostname;
 use opentelemetry_proto::tonic::{
     collector::metrics::v1::{
@@ -119,44 +117,11 @@ pub fn resource_attributes(service: Option<&str>) -> Vec<KeyValue> {
     attrs
 }
 
-/// I'm not entirely sure this is worth it. Instead of using a non-monotonic
-/// system time call for every export we use a base timestamp and a monotonic
-/// offset. This means that regardless of clock skew that happens after process
-/// start we'll always have an accurate timestamp.
-/// NOTE(rossdylan): This doesn't handle the case where our clocks are skewed
-/// from the start.
-#[derive(Copy, Clone)]
-pub struct StartTs {
-    instant: Instant,
-    unix_ns: u64,
-}
-
-impl StartTs {
-    pub fn new() -> Self {
-        Self {
-            instant: Instant::now(),
-            unix_ns: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("duration since epoch must not be invalid")
-                .as_secs()
-                * NANOS_PER_SEC,
-        }
-    }
-
-    /// Return our starting timestamp, and the current timestamp as nanoseconds since the
-    /// unix epoch. We only support second resolution, so we take the seconds and convert into
-    /// nanos instead of using a full nanosecond resolution.
-    pub fn now(&self) -> u64 {
-        self.unix_ns + (self.instant.elapsed().as_secs() * NANOS_PER_SEC)
-    }
-}
-
 /// The collector is used to run our periodic exports to some endpoint that
 /// speaks otel.
 pub struct Collector {
     registry: &'static Registry,
     client: MetricsServiceClient<Channel>,
-    start_time_ts: Option<StartTs>,
     resource_attrs: Vec<KeyValue>,
     metrics_gauge: crate::Gauge,
     export_latency_ms: crate::Histogram,
@@ -171,7 +136,6 @@ impl Collector {
         Self {
             registry,
             client,
-            start_time_ts: None,
             resource_attrs: resource_attributes(service),
             metrics_gauge: metrics::REGISTERED_METRICS.must(&[]),
             export_latency_ms: metrics::EXPORT_LATENCY_MS.must(&[]),
@@ -179,7 +143,10 @@ impl Collector {
     }
 
     pub async fn collect(&mut self) {
-        let collection_ts = self.start_time_ts.get_or_insert_with(StartTs::new).now();
+        let collection_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time rewound before unix epoch")
+            .as_nanos() as u64;
         let collection_start = Instant::now();
         let otel_metrics = {
             let metrics = self.registry.metrics.read();

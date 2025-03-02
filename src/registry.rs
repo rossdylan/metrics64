@@ -1,17 +1,19 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     hash::{Hash, Hasher},
-    sync::{LazyLock, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
     time::Duration,
 };
 
-use dashmap::DashSet;
 use opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_client::MetricsServiceClient;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use smallvec::SmallVec;
 use tonic::transport::Endpoint;
 
-use crate::metrics::{Metric, Recordable};
+use crate::{
+    metrics::{Metric, Recordable},
+    utils::BuildNoopHasher,
+};
 
 const DEFAULT_COLLECTOR_ADDR: &str = "http://localhost:4317";
 pub static DEFAULT_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
@@ -43,7 +45,7 @@ impl MetricMetadata {
 
 #[derive(Default)]
 struct Interner {
-    inner: DashSet<&'static str>,
+    inner: Arc<Mutex<HashSet<&'static str>>>,
 }
 
 impl Interner {
@@ -51,9 +53,9 @@ impl Interner {
     /// track them in a [`HashSet`]. Ideally we'd arena allocate the actual strings
     /// instead of littering them across the heap.
     fn intern_tags(&self, tags: &[(&str, &str)]) -> SmallVec<[(&'static str, &'static str); 8]> {
-        let intern = |i: &DashSet<&'static str>, s| -> &'static str {
+        let intern = |i: &mut HashSet<&'static str>, s| -> &'static str {
             if let Some(is) = i.get(s) {
-                *is
+                is
             } else {
                 let s = String::from(s);
                 let leaked: &'static str = Box::leak(s.into_boxed_str());
@@ -61,22 +63,23 @@ impl Interner {
                 leaked
             }
         };
+        let mut hs = self.inner.lock();
         tags.iter()
-            .map(|(k, v)| (intern(&self.inner, *k), intern(&self.inner, *v)))
+            .map(|(k, v)| (intern(&mut hs, *k), intern(&mut hs, *v)))
             .collect()
     }
 }
 
 #[derive(Default)]
 pub struct Registry {
-    pub metrics: RwLock<HashMap<u64, MetricMetadata>>,
+    pub metrics: RwLock<HashMap<u64, MetricMetadata, BuildNoopHasher>>,
     interner: Interner,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self {
-            metrics: Default::default(),
+            metrics: RwLock::new(HashMap::with_hasher(BuildNoopHasher {})),
             interner: Default::default(),
         }
     }
@@ -127,7 +130,7 @@ impl Registry {
         tags: &[(&str, &str)],
     ) -> R {
         // NOTE(rossdylan): We are trying to be clever here by interning, de-duping
-        // and stack-allocating our tags all in one go. For small sets of tags that
+        // and inline-allocating our tags all in one go. For small sets of tags that
         // we've seen before this avoids allocating entirely. However we do pay
         // a general penalty for all the lookups and locking involved.
         let mut tags = self.interner.intern_tags(tags);

@@ -71,7 +71,7 @@ static SCALE_FACTORS: LazyLock<[f64; 21]> = LazyLock::new(|| {
 /// Seems tdigest has fallen to the wayside, and the general consensus?? is
 /// log-exponential histograms are the thing. I think ddsketch, otel,
 /// and prometheus all implement some version of it. I think the implementation
-/// should be fairly straight forward, but we'll see. The go for it seems
+/// should be fairly straight forward, but we'll see. The go implementation seems
 /// reasonable, at least compared to the weirdness of tdigest
 #[derive(Debug)]
 struct HistogramInner {
