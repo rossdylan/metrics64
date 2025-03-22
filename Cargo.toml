@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 twox-hash = "2.0.1"
-libc = "0.2.170"
 opentelemetry-proto = { version = "0.28.0", default-features = false, features = [
     "gen-tonic",
     "metrics",

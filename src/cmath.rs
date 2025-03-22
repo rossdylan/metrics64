@@ -1,24 +1,20 @@
-//! Re-export Ldexp and Frexp from c so we can match the go implementation
-//! Alas, I am committing some crimes. Rust deprecated and removed these methods
-//! on f64 years ago, but it doesn't appear there are easy to use alternatives
-//! so I'm re-exporting them from c. I think this will match whatever the other
-//! otel implementations use, but who knows. The rust one just does a software
-//! implementation, but I'm not actually sure libm backs these with something
-//! hw anyway.
-//! Don't use these, they are only here for the log-exponential histogram stuff
-use libc::c_int;
+//! Reimplementations of musl libc's ldexp and frexp functions. Rust chose not to expose these from libm or implement
+//! them itself. I've chosen to copy the musl implementations into rust to avoid any in release-mode.
+//! The FFI that is here exists to ensure cross-compatibility by double checking the implementation against w/e is
+//! linked into rust.
 
+#[cfg(debug_assertions)]
 mod ffi {
-    use libc::{c_double, c_int};
-
     extern "C" {
-        pub fn ldexp(x: c_double, n: c_int) -> c_double;
-        pub fn frexp(n: c_double, value: &mut c_int) -> c_double;
+        pub fn ldexp(x: f64, n: i32) -> f64;
+        pub fn frexp(n: f64, value: &mut i32) -> f64;
     }
 }
 
-/// A naive rust copy of the musl libc ldexp function
-pub fn ldexp(frac: f64, exp: isize) -> f64 {
+/// A naive rust copy of the musl libc ldexp function. We aren't aiming for speed
+/// just matching behavior and safety. I want to be able to remove the libc ffi
+/// calls here.
+pub fn ldexp(frac: f64, exp: i32) -> f64 {
     let mut y = frac;
     let mut n = exp;
 
@@ -48,34 +44,55 @@ pub fn ldexp(frac: f64, exp: isize) -> f64 {
     let int: u64 = ((0x3ff + n) as u64) << 52;
     let float: f64 = f64::from_bits(int);
     let res = y * float;
-    debug_assert_eq!(res, unsafe { ffi::ldexp(frac, exp as c_int) });
+    #[cfg(debug_assertions)]
+    {
+        let unsafe_res = unsafe { ffi::ldexp(frac, exp) };
+        if !(unsafe_res.is_nan() && res.is_nan()) {
+            debug_assert_eq!(res, unsafe_res, "ldexp mismatch for {frac}, {exp}");
+        }
+    }
     res
 }
 
-//fn frexp_inner(value: f64, out: &mut isize) {
-//    let int = value.to_bits() >> 52 & 07ff;
-//	if (!int) {
-//		if (value) {
-//			 = frexp_inner(x* 2_f64.powi(64), out);
-//			*e -= 64;
-//		} else {
-//		  *e = 0;
-//		}
-//		return x;
-//	} else if (ee == 0x7ff) {
-//		return x;
-//	}
-//
-//	*e = ee - 0x3fe;
-//	y.i &= 0x800fffffffffffffull;
-//	y.i |= 0x3fe0000000000000ull;
-//	return y.d;
-//}
-
-pub fn frexp(value: f64) -> (f64, isize) {
-    unsafe {
+pub fn frexp(value: f64) -> (f64, i32) {
+    let mut safe_exp = 0;
+    let safe_x = frexp_inner(value, &mut safe_exp);
+    #[cfg(debug_assertions)]
+    {
         let mut exp = 0;
-        let x = ffi::frexp(value, &mut exp);
-        (x, exp as isize)
+        let x = unsafe { ffi::frexp(value, &mut exp) };
+        if x.is_nan() && safe_x.is_nan() {
+            debug_assert_eq!(exp, safe_exp, "frexp result mismatch for {value}");
+        } else {
+            debug_assert_eq!(
+                (x, exp),
+                (safe_x, safe_exp),
+                "safe frexp doesn't match libc for {value}"
+            );
+        }
     }
+    (safe_x, safe_exp)
+}
+
+// A naive port of the musl libc frexp method. The biggest notes here are that
+// instead of using a union to transmute between u64 and f64 we use the native
+// [`f64::from_bits`] and [`f64::to_bits`] methods.
+fn frexp_inner(mut x: f64, e: &mut i32) -> f64 {
+    let mut i: u64 = x.to_bits();
+    let ee: i32 = (i >> 52 & 0x7ff) as i32;
+    if ee == 0 {
+        if x != 0f64 {
+            x = frexp_inner(x * 2f64.powi(64), e);
+            *e -= 64;
+        } else {
+            *e = 0;
+        }
+        return x;
+    } else if ee == 0x7ff {
+        return x;
+    }
+    *e = ee - 0x3fe;
+    i &= 0x800fffffffffffffu64;
+    i |= 0x3fe0000000000000u64;
+    f64::from_bits(i)
 }

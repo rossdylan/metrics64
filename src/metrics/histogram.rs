@@ -149,7 +149,6 @@ impl HistogramInner {
     /// Map the given floating point value to a bin in our histogram.
     fn get_bin(&self, value: f64) -> i32 {
         let (frac, exp) = frexp(value);
-        let exp = exp as i32;
         if self.scale <= 0 {
             // Because of the choice of fraction is always 1 power of two higher than we want.
             let correction = if frac == 0.5 {
