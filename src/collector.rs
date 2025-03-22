@@ -1,6 +1,6 @@
 use std::{
     env,
-    sync::OnceLock,
+    sync::LazyLock,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -50,15 +50,15 @@ impl ProcessAttributes {
     /// Cache our hostname and other 'static' process information using a [`OnceLock`]
     // so we don't call things like [`gethostname`] a bunch.
     pub fn get() -> &'static Self {
-        static PROC_ATTR_ONCE: OnceLock<ProcessAttributes> = OnceLock::new();
-        PROC_ATTR_ONCE.get_or_init(|| ProcessAttributes {
+        static PROC_ATTR_ONCE: LazyLock<ProcessAttributes> = LazyLock::new(|| ProcessAttributes {
             hostname: gethostname()
                 .into_string()
                 .expect("gethostname should return a valid utf8 string"),
             command: env::args().next(),
             // TODO(rossdylan): I'm not sold on this whole instance-id thing.
             instance: Uuid::new_v4(),
-        })
+        });
+        &PROC_ATTR_ONCE
     }
 }
 

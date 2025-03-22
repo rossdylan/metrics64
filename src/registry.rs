@@ -111,7 +111,7 @@ impl Registry {
 
     /// Calculate a metric-id for this metric. This is used as a key internally to the registry to handle lookups of
     /// registered metrics.
-    /// NOTE(rossdylan): tags **must** be sorted to get an accurate mid
+    /// NOTE(rossdylan): tags **must** be sorted to get a stable mid
     fn mid(&self, name: &str, tags: &[(&str, &str)]) -> u64 {
         debug_assert!(tags.is_sorted());
         let mut hasher = twox_hash::XxHash64::with_seed(MID_SEED);
