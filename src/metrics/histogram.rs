@@ -250,13 +250,18 @@ impl HistogramInner {
             self.scale -= scale_delta;
             self.positive_buckets.downscale(scale_delta);
             self.negative_buckets.downscale(scale_delta);
-            debug_assert_eq!(
-                self.positive_buckets.counts.iter().sum::<u64>()
-                    + self.negative_buckets.counts.iter().sum::<u64>()
-                    + self.zero_count,
-                self.count - 1,
-                "combined buckets sum must equal total count"
-            );
+            #[cfg(debug_assertions)]
+            {
+                let pos = self.positive_buckets.counts.iter().sum::<u64>();
+                let neg = self.negative_buckets.counts.iter().sum::<u64>();
+                let zero = self.zero_count;
+                let count = self.count - 1;
+                debug_assert_eq!(
+                    pos+neg+zero,
+                    count,
+                    "[downscale] combined buckets sum must equal total count, count={count}, combined={}, pos={pos}, neg={neg}, zero={zero}", pos+neg+zero
+                );
+            }
             self.get_bin(abs_value)
         } else {
             bin
@@ -267,13 +272,18 @@ impl HistogramInner {
             &mut self.positive_buckets
         };
         buckets.record(final_bin);
-        debug_assert_eq!(
-            self.positive_buckets.counts.iter().sum::<u64>()
-                + self.negative_buckets.counts.iter().sum::<u64>()
-                + self.zero_count,
-            self.count,
-            "combined buckets sum must equal total count"
-        );
+        #[cfg(debug_assertions)]
+        {
+            let pos = self.positive_buckets.counts.iter().sum::<u64>();
+            let neg = self.negative_buckets.counts.iter().sum::<u64>();
+            let zero = self.zero_count;
+            let count = self.count;
+            debug_assert_eq!(
+                pos+neg+zero,
+                count,
+                "combined buckets sum must equal total count, count={count}, combined={}, pos={pos}, neg={neg}, zero={zero}", pos+neg+zero
+            );
+        }
     }
 }
 
@@ -385,11 +395,11 @@ impl Histogram {
     }
 
     pub fn record_duration_sec(&self, value: Duration) {
-        self.inner.lock().record(value.as_secs() as f64);
+        self.record(value.as_secs() as f64);
     }
 
     pub fn record_duration_ms(&self, value: Duration) {
-        self.inner.lock().record(value.as_millis() as f64)
+        self.record(value.as_millis() as f64)
     }
 
     /// Record the millisecond duration of a given block by using a guard

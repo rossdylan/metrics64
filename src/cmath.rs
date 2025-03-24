@@ -5,7 +5,7 @@
 
 #[cfg(debug_assertions)]
 mod ffi {
-    extern "C" {
+    unsafe extern "C" {
         pub fn ldexp(x: f64, n: i32) -> f64;
         pub fn frexp(n: f64, value: &mut i32) -> f64;
     }
@@ -14,6 +14,7 @@ mod ffi {
 /// A naive rust copy of the musl libc ldexp function. We aren't aiming for speed
 /// just matching behavior and safety. I want to be able to remove the libc ffi
 /// calls here.
+/// Reference: https://git.musl-libc.org/cgit/musl/tree/src/math/scalbn.c
 pub fn ldexp(frac: f64, exp: i32) -> f64 {
     let mut y = frac;
     let mut n = exp;
@@ -77,6 +78,7 @@ pub fn frexp(value: f64) -> (f64, i32) {
 // A naive port of the musl libc frexp method. The biggest notes here are that
 // instead of using a union to transmute between u64 and f64 we use the native
 // [`f64::from_bits`] and [`f64::to_bits`] methods.
+// Reference: https://git.musl-libc.org/cgit/musl/tree/src/math/frexp.c
 fn frexp_inner(mut x: f64, e: &mut i32) -> f64 {
     let mut i: u64 = x.to_bits();
     let ee: i32 = (i >> 52 & 0x7ff) as i32;
